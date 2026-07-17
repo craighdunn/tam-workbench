@@ -136,6 +136,7 @@ def _handle_dashboard_action(data_dir: str | Path, params: dict[str, Any]) -> di
             email=_param_value(params, "email"),
             title=_param_value(params, "title"),
             role=role,
+            phone=_param_value(params, "phone"),
             notes=_param_value(params, "notes"),
             is_primary=False,
         )
@@ -188,6 +189,8 @@ def _handle_dashboard_action(data_dir: str | Path, params: dict[str, Any]) -> di
             name=_param_value(params, "name") or None,
             title=_param_value(params, "title") or None,
             email=_param_value(params, "email") or None,
+            phone=_param_value(params, "phone") or None,
+            notes=_param_value(params, "notes") or None,
             role=role or None,
         )
         return {"message": f"Updated contact: {contact['name']}", "contact": contact}
@@ -316,6 +319,8 @@ def _build_design_payload(data: dict[str, Any]) -> dict[str, Any]:
                 "title": contact.get("title") or contact.get("role") or "Contact",
                 "role": contact.get("role") or "",
                 "email": contact.get("email") or "",
+                "phone": contact.get("phone") or "",
+                "notes": contact.get("notes") or "",
                 "influence": influence,
                 "isPrimary": bool(contact.get("is_primary")),
                 "isShowpadTeam": _is_showpad_team_contact(contact),
@@ -475,6 +480,9 @@ body {{ font-family: 'DM Sans', system-ui, sans-serif; }}
 .col-add-btn:hover {{ opacity: 1 !important; color: #6382F0 !important; }}
 .form-input {{ background: #090D16; border: 1px solid #1E2A3A; border-radius: 7px; padding: 8px 10px; font-size: 12.5px; color: #C4CFDF; outline: none; font-family: inherit; width: 100%; }}
 .form-input::placeholder {{ color: #354258; }}
+.editor-primary {{ font-size: 13px; font-weight: 700; background: #6382F0; color: #fff; border: none; border-radius: 9px; padding: 9px 16px; cursor: pointer; font-family: inherit; }}
+.editor-secondary {{ font-size: 13px; font-weight: 600; background: rgba(255,255,255,0.05); color: #8090A8; border: 1px solid #1E2A3A; border-radius: 9px; padding: 9px 14px; cursor: pointer; font-family: inherit; }}
+.editor-primary:hover, .editor-secondary:hover {{ filter: brightness(1.08); }}
 a {{ color: #6382F0; text-decoration: none; }}
 a:hover {{ opacity: 0.8; }}
 button, input, textarea {{ font-family: inherit; }}
@@ -505,6 +513,7 @@ const state = {{
   addingToCol: null,
   showAddContact: false,
   showAddNote: false,
+  editor: null,
 }};
 function esc(v) {{ return String(v ?? '').replace(/[&<>\"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[ch])); }}
 function getAccount() {{ return (state.accounts || []).find(a => String(a.id) === String(state.selectedId)) || (state.accounts || [])[0] || {{}}; }}
@@ -631,13 +640,13 @@ function renderTabs(acct, kan) {{
   return `<div style="flex-shrink:0;background:#0A0C13;border-bottom:1px solid #161B28;padding:0 22px;display:flex;align-items:center;">${{tabs.map(([id,label]) => `<button class="tab-btn" data-tab="${{id}}" style="background:transparent;border:none;cursor:pointer;font-family:inherit;padding:11px 16px;font-size:13px;font-weight:${{state.activeTab===id?'600':'400'}};color:${{state.activeTab===id?'#DCE4F0':'#425268'}};border-bottom:2px solid ${{state.activeTab===id?accent:'transparent'}};white-space:nowrap;">${{esc(label)}}</button>`).join('')}}</div>`;
 }}
 function renderTasks(acct, kan) {{
-  return `<div style="padding:16px 22px 28px;"><div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;min-height:200px;align-items:flex-start;">${{STATUSES.map(c => renderColumn(c, kan, acct)).join('')}}</div></div>`;
+  return `<div style="padding:16px 22px 18px;height:100%;box-sizing:border-box;"><div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;height:100%;align-items:stretch;">${{STATUSES.map(c => renderColumn(c, kan, acct)).join('')}}</div></div>`;
 }}
 function renderColumn(c, kan, acct) {{
   const cards = kan[c.id] || []; const isAlert = c.alertOn && cards.length > 0; const isDrop = state.dropTarget === c.id; const isAdding = state.addingToCol === c.id; const accent = acct.color || '#6382F0';
-  return `<div class="kan-col" data-col="${{c.id}}" style="flex-shrink:0;width:220px;min-width:220px;display:flex;flex-direction:column;background:#0F1220;border-radius:10px;overflow:hidden;border:1px solid ${{isDrop ? accent : (isAlert ? 'rgba(239,68,68,0.22)' : (isAdding ? 'rgba(99,130,240,0.25)' : '#1A2232'))}};transition:border-color 0.12s;">
+  return `<div class="kan-col" data-col="${{c.id}}" style="flex-shrink:0;width:220px;min-width:220px;display:flex;flex-direction:column;background:#0F1220;border-radius:10px;overflow:hidden;border:1px solid ${{isDrop ? accent : (isAlert ? 'rgba(239,68,68,0.22)' : (isAdding ? 'rgba(99,130,240,0.25)' : '#1A2232'))}};transition:border-color 0.12s;height:calc(100vh - 226px);max-height:calc(100vh - 226px);">
     <div style="padding:9px 11px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1A2232;background:${{isAlert ? 'rgba(239,68,68,0.04)' : (isAdding ? 'rgba(99,130,240,0.04)' : '#0C0F19')}};"><div style="display:flex;align-items:center;gap:6px;"><div style="width:6px;height:6px;border-radius:50%;background:${{c.dot}};"></div><span style="font-size:10.5px;font-weight:700;color:${{isAlert ? '#F87171' : c.dot}};text-transform:uppercase;letter-spacing:0.07em;">${{c.label}}</span></div><div style="display:flex;align-items:center;gap:7px;"><span style="font-size:10.5px;font-weight:600;background:${{isAlert ? 'rgba(239,68,68,0.14)' : 'rgba(255,255,255,0.05)'}};color:${{isAlert ? '#F87171' : '#425268'}};border-radius:8px;padding:1px 7px;">${{cards.length}}</span><button class="col-add-btn" data-add-col="${{c.id}}" style="background:transparent;border:none;cursor:pointer;font-family:inherit;font-size:16px;line-height:1;padding:0 2px;color:${{isAdding ? '#6382F0' : '#354258'}};opacity:0.8;font-weight:300;" title="Add task">+</button></div></div>
-    <div style="overflow-y:auto;padding:7px;display:flex;flex-direction:column;gap:5px;min-height:40px;max-height:380px;">${{cards.map(card => renderCard(card, c.id)).join('')}}${{cards.length===0 ? '<div style="border:1px dashed #1A2232;border-radius:8px;padding:14px 10px;text-align:center;font-size:11px;color:#2A3444;">drop here</div>' : ''}}</div>
+    <div style="overflow-y:auto;padding:7px;display:flex;flex-direction:column;gap:5px;min-height:40px;flex:1;">${{cards.map(card => renderCard(card, c.id)).join('')}}${{cards.length===0 ? '<div style="border:1px dashed #1A2232;border-radius:8px;padding:14px 10px;text-align:center;font-size:11px;color:#2A3444;">drop here</div>' : ''}}</div>
     ${{isAdding ? renderAddTaskForm(c.id) : ''}}
   </div>`;
 }}
@@ -675,10 +684,51 @@ function renderNote(n) {{
   const expanded = !!state.expandedNotes[n.id]; const text = expanded || (n.text || '').length <= 130 ? (n.text || '') : n.text.slice(0,130) + '…';
   return `<div data-note="${{esc(n.id)}}" style="padding:14px 0;border-bottom:1px solid #161B28;cursor:pointer;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span style="font-size:10.5px;color:#354258;font-family:ui-monospace,monospace;">${{esc(n.ts)}}</span><span style="font-size:11px;font-weight:600;color:#6382F0;">${{esc(n.author || 'Craig')}}</span>${{expanded ? '<span style="font-size:10px;color:#354258;margin-left:auto;">collapse ↑</span>' : '<span style="margin-left:auto;"></span>'}}<button data-edit-note="${{esc(n.id)}}" style="background:transparent;border:none;color:#425268;font-size:11px;cursor:pointer;">Edit</button><button data-archive-note="${{esc(n.id)}}" style="background:transparent;border:none;color:#F87171;font-size:11px;cursor:pointer;">Archive</button></div><p style="font-size:13px;color:#7A8BA0;line-height:1.6;margin:0;text-wrap:pretty;">${{esc(text)}}</p></div>`;
 }}
+function renderEditorOverlay() {{
+  if (!state.editor) return '';
+  const e = state.editor;
+  const title = e.type === 'task' ? 'Edit Task' : e.type === 'contact' ? 'Edit Contact' : 'Edit Note';
+  return `<div class="editor-backdrop" style="position:fixed;inset:0;z-index:9998;background:rgba(3,6,12,0.72);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:26px;">
+    <div class="editor-panel" style="width:min(720px,94vw);max-height:88vh;overflow:auto;background:#0D1020;border:1px solid #26344D;border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.45);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #1A2232;"><div style="font-size:18px;font-weight:700;color:#DCE4F0;">${{title}}</div><button data-editor-cancel onclick="state.editor=null;render();" style="background:rgba(255,255,255,0.04);border:1px solid #1E2A3A;border-radius:8px;color:#8090A8;padding:6px 10px;cursor:pointer;">Close</button></div>
+      <div style="padding:18px 20px;">${{e.type === 'task' ? renderTaskEditor(e.item) : e.type === 'contact' ? renderContactEditor(e.item) : renderNoteEditor(e.item)}}</div>
+    </div>
+  </div>`;
+}}
+function fieldStyle() {{ return 'width:100%;box-sizing:border-box;background:#090D16;border:1px solid #1E2A3A;border-radius:8px;padding:9px 10px;font-size:13px;color:#C4CFDF;outline:none;font-family:inherit;'; }}
+function label(text, inputHtml) {{ return `<label style="display:block;font-size:11px;font-weight:700;color:#516070;text-transform:uppercase;letter-spacing:.07em;">${{text}}<div style="margin-top:6px;">${{inputHtml}}</div></label>`; }}
+function renderTaskEditor(card) {{
+  return `<div style="display:grid;gap:14px;">
+    ${{label('Title', `<input id="edit-task-title" value="${{esc(card.title || '')}}" style="${{fieldStyle()}}" />`)}}
+    ${{label('Description', `<textarea id="edit-task-desc" rows="7" style="${{fieldStyle()}}resize:vertical;line-height:1.55;">${{esc(card.summary || card.desc || '')}}</textarea>`)}}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      ${{label('Weight', `<select id="edit-task-priority" style="${{fieldStyle()}}"><option value="high" ${{card.priority==='high'?'selected':''}}>High</option><option value="medium" ${{(card.priority||'medium')==='medium'?'selected':''}}>Medium</option><option value="low" ${{card.priority==='low'?'selected':''}}>Low</option></select>`)}}
+      ${{label('Due date', `<input id="edit-task-due" value="${{esc(card.due || '')}}" style="${{fieldStyle()}}" />`)}}
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;"><button data-editor-cancel onclick="state.editor=null;render();" class="editor-secondary">Cancel</button><button data-editor-save-task="${{esc(card.id)}}" onclick="saveActiveEditor()" class="editor-primary">Save task</button></div>
+  </div>`;
+}}
+function renderContactEditor(c) {{
+  const kind = c.isShowpadTeam ? 'showpad' : 'client';
+  return `<div style="display:grid;gap:14px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${{label('Name', `<input id="edit-contact-name" value="${{esc(c.name || '')}}" style="${{fieldStyle()}}" />`)}}${{label('Title / role', `<input id="edit-contact-title" value="${{esc(c.title || '')}}" style="${{fieldStyle()}}" />`)}}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${{label('Email', `<input id="edit-contact-email" value="${{esc(c.email || '')}}" style="${{fieldStyle()}}" />`)}}${{label('Phone', `<input id="edit-contact-phone" value="${{esc(c.phone || '')}}" style="${{fieldStyle()}}" />`)}}</div>
+    ${{label('Contact type', `<select id="edit-contact-kind" style="${{fieldStyle()}}"><option value="client" ${{kind==='client'?'selected':''}}>Client Contact</option><option value="showpad" ${{kind==='showpad'?'selected':''}}>Showpad Contact</option></select>`)}}
+    ${{label('Notes', `<textarea id="edit-contact-notes" rows="6" style="${{fieldStyle()}}resize:vertical;line-height:1.55;">${{esc(c.notes || '')}}</textarea>`)}}
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;"><button data-editor-cancel onclick="state.editor=null;render();" class="editor-secondary">Cancel</button><button data-editor-save-contact="${{esc(c.id)}}" onclick="saveActiveEditor()" class="editor-primary">Save contact</button></div>
+  </div>`;
+}}
+function renderNoteEditor(n) {{
+  return `<div style="display:grid;gap:14px;">
+    ${{label('Note body', `<textarea id="edit-note-body" rows="12" style="${{fieldStyle()}}resize:vertical;line-height:1.6;min-height:260px;">${{esc(n.body || n.text || '')}}</textarea>`)}}
+    <div style="font-size:11.5px;color:#516070;">Editing inline keeps long notes readable without a browser pop-up.</div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;"><button data-editor-cancel onclick="state.editor=null;render();" class="editor-secondary">Cancel</button><button data-editor-save-note="${{esc(n.id)}}" onclick="saveActiveEditor()" class="editor-primary">Save note</button></div>
+  </div>`;
+}}
 function render() {{
   const acct = getAccount(); const kan = kanbanFor(acct.id);
   const content = state.activeTab === 'contacts' ? renderContacts(acct) : state.activeTab === 'notes' ? renderNotes(acct) : renderTasks(acct, kan);
-  document.getElementById('app').innerHTML = `<div style="display:flex;height:100vh;overflow:hidden;background:#0C0E15;font-family:'DM Sans',system-ui,sans-serif;color:#DCE4F0;">${{renderSidebar()}}<main style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;">${{renderTopBar(acct)}}${{renderHeader(acct, kan)}}${{renderTabs(acct, kan)}}<div style="flex:1;overflow-y:auto;overflow-x:hidden;background:#0C0E15;">${{content}}</div></main></div>`;
+  document.getElementById('app').innerHTML = `<div style="display:flex;height:100vh;overflow:hidden;background:#0C0E15;font-family:'DM Sans',system-ui,sans-serif;color:#DCE4F0;">${{renderSidebar()}}<main style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;">${{renderTopBar(acct)}}${{renderHeader(acct, kan)}}${{renderTabs(acct, kan)}}<div style="flex:1;overflow-y:auto;overflow-x:hidden;background:#0C0E15;">${{content}}</div></main></div>${{renderEditorOverlay()}}`;
   bind();
 }}
 function bind() {{
@@ -703,6 +753,15 @@ function bind() {{
   document.querySelectorAll('[data-note]').forEach(el => el.addEventListener('click', () => {{ state.expandedNotes[el.dataset.note] = !state.expandedNotes[el.dataset.note]; render(); }}));
   document.querySelectorAll('[data-edit-account]').forEach(el => el.addEventListener('click', editAccount));
   document.querySelectorAll('[data-archive-account]').forEach(el => el.addEventListener('click', archiveAccount));
+  document.querySelectorAll('[data-editor-cancel]').forEach(el => el.addEventListener('click', () => {{ state.editor = null; render(); }}));
+  document.querySelectorAll('[data-editor-save-task],[data-editor-save-contact],[data-editor-save-note]').forEach(el => el.addEventListener('click', saveActiveEditor));
+}}
+function saveActiveEditor() {{
+  if (!state.editor) return;
+  const id = state.editor.item?.id;
+  if (state.editor.type === 'task') saveTaskEditor(id);
+  if (state.editor.type === 'contact') saveContactEditor(id);
+  if (state.editor.type === 'note') saveNoteEditor(id);
 }}
 function findTask(id) {{ const kan = kanbanFor(state.selectedId); for (const col of Object.keys(kan)) {{ const card = (kan[col] || []).find(c => String(c.id) === String(id)); if (card) return {{ card, col }}; }} return null; }}
 function editAccount() {{
@@ -720,11 +779,16 @@ function archiveAccount() {{
   persistDashboardAction('archive_account', {{ account_id: acct.id }});
 }}
 function editTask(id) {{
+  const found = findTask(id); if (!found) return;
+  state.editor = {{ type: 'task', item: {{ ...found.card }} }}; render();
+}}
+function saveTaskEditor(id) {{
   const found = findTask(id); if (!found) return; const card = found.card;
-  const title = prompt('Task title', card.title || ''); if (title === null || !title.trim()) return;
-  const desc = prompt('Short description', card.summary || card.desc || '') ?? (card.summary || card.desc || '');
-  const due = prompt('Due date', card.due || '') ?? (card.due || '');
-  card.title = title.trim(); card.desc = desc.trim(); card.summary = desc.trim(); card.due = due.trim(); render();
+  const title = document.getElementById('edit-task-title')?.value.trim(); if (!title) return;
+  const desc = document.getElementById('edit-task-desc')?.value.trim() || '';
+  const due = document.getElementById('edit-task-due')?.value.trim() || '';
+  const priority = document.getElementById('edit-task-priority')?.value || 'medium';
+  card.title = title; card.desc = desc; card.summary = desc; card.due = due; card.priority = priority; state.editor = null; render();
   persistDashboardAction('update_task', {{ task_id: id, title: card.title, summary: card.summary, due_date: card.due, priority: card.priority }});
 }}
 function archiveTask(id) {{
@@ -735,12 +799,18 @@ function archiveTask(id) {{
 function findContact(id) {{ return (contactsFor(state.selectedId) || []).find(c => String(c.id) === String(id)); }}
 function editContact(id) {{
   const c = findContact(id); if (!c) return;
-  const name = prompt('Contact name', c.name || ''); if (name === null || !name.trim()) return;
-  const title = prompt('Title / Role', c.title || '') ?? (c.title || '');
-  const email = prompt('Email', c.email || '') ?? (c.email || '');
-  const kind = confirm('Is this a Showpad Contact? Choose OK for Showpad Contact, Cancel for Client Contact.') ? 'showpad' : 'client';
-  c.name = name.trim(); c.title = title.trim(); c.email = email.trim(); c.isShowpadTeam = kind === 'showpad'; render();
-  persistDashboardAction('update_contact', {{ contact_id: id, name: c.name, title: c.title, email: c.email, contact_kind: kind }});
+  state.editor = {{ type: 'contact', item: {{ ...c }} }}; render();
+}}
+function saveContactEditor(id) {{
+  const c = findContact(id); if (!c) return;
+  const name = document.getElementById('edit-contact-name')?.value.trim(); if (!name) return;
+  const title = document.getElementById('edit-contact-title')?.value.trim() || '';
+  const email = document.getElementById('edit-contact-email')?.value.trim() || '';
+  const phone = document.getElementById('edit-contact-phone')?.value.trim() || '';
+  const notes = document.getElementById('edit-contact-notes')?.value.trim() || '';
+  const kind = document.getElementById('edit-contact-kind')?.value || 'client';
+  c.name = name; c.title = title; c.email = email; c.phone = phone; c.notes = notes; c.isShowpadTeam = kind === 'showpad'; state.editor = null; render();
+  persistDashboardAction('update_contact', {{ contact_id: id, name: c.name, title: c.title, email: c.email, phone: c.phone, notes: c.notes, contact_kind: kind }});
 }}
 function archiveContact(id) {{
   const c = findContact(id); if (!c || !confirm(`Archive contact "${{c.name}}"?`)) return;
@@ -750,8 +820,12 @@ function archiveContact(id) {{
 function findNote(id) {{ return (notesFor(state.selectedId) || []).find(n => String(n.id) === String(id)); }}
 function editNote(id) {{
   const n = findNote(id); if (!n) return;
-  const body = prompt('Note body', n.body || n.text || ''); if (body === null || !body.trim()) return;
-  n.body = body.trim(); n.text = body.trim(); render();
+  state.editor = {{ type: 'note', item: {{ ...n }} }}; render();
+}}
+function saveNoteEditor(id) {{
+  const n = findNote(id); if (!n) return;
+  const body = document.getElementById('edit-note-body')?.value.trim(); if (!body) return;
+  n.body = body; n.text = body; state.editor = null; render();
   persistDashboardAction('update_note', {{ note_id: id, body: n.body, source: n.author || 'Dashboard' }});
 }}
 function archiveNote(id) {{

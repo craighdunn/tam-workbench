@@ -6,6 +6,7 @@ import inspect
 import sys
 
 from tam_workbench import dashboard
+from tam_workbench.dashboard_data import build_dashboard_data
 from tam_workbench.db import WorkbenchDB
 
 
@@ -242,6 +243,30 @@ def test_dashboard_action_server_saves_without_query_param_navigation(tmp_path):
 
     assert body["ok"] is True
     assert db.list_tasks(account_id=account["id"])[0]["title"] == "Async task"
+
+
+def test_imported_dashboard_uses_editor_panels_and_tall_kanban_columns(tmp_path):
+    db = WorkbenchDB(tmp_path)
+    db.initialize()
+    account = db.create_account(name="Acme")
+    db.create_task(account_id=account["id"], title="Review", status="active", priority="high", summary="Longer task details")
+    db.create_contact(account_id=account["id"], name="Alex Client", email="alex@example.com", phone="555-0100", notes="Decision maker")
+    db.create_note(account_id=account["id"], body="A long note body", source="Dashboard")
+
+    html = dashboard._design_html(dashboard._build_design_payload(build_dashboard_data(tmp_path)))
+
+    assert "height:calc(100vh - 226px)" in html
+    assert "Edit Task" in html
+    assert "edit-task-desc" in html
+    assert "edit-task-priority" in html
+    assert "Edit Contact" in html
+    assert "edit-contact-phone" in html
+    assert "edit-contact-notes" in html
+    assert "Edit Note" in html
+    assert "edit-note-body" in html
+    assert "prompt('Task title'" not in html
+    assert "prompt('Contact name'" not in html
+    assert "prompt('Note body'" not in html
 
 
 def test_dashboard_query_actions_update_and_archive_records(tmp_path):

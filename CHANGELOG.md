@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.5 — Dashboard edit panels and Kanban height polish
+
+### Changed
+
+- Kanban columns now extend to the available dashboard height and scroll inside the column.
+- Task editing now uses an in-dashboard editor panel for title, description, weight, and due date.
+- Contact editing now uses an in-dashboard editor panel for name, title, email, phone, contact type, and notes.
+- Note editing now uses a large in-dashboard text area instead of a browser prompt for long note bodies.
+
 ## v0.3.4 — Same-page dashboard saves
 
 Dashboard save actions now use a local async save bridge instead of opening a query-param tab.
