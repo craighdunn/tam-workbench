@@ -1,0 +1,31 @@
+[project]
+name = "tam-workbench"
+version = "0.3.4"
+description = "Local MCP-enabled TAM Workbench for Claude Desktop with account dashboard, contacts, tasks, notes, and reporting"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=1.0.0",
+  "streamlit>=1.45.0",
+]
+
+[project.scripts]
+tam-workbench = "tam_workbench.cli:main"
+tam-workbench-mcp = "tam_workbench.server:main"
+tam-workbench-dashboard = "tam_workbench.dashboard:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tam_workbench"]
