@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_ROOT="/tmp/tam-workbench-package-build"
 PACKAGE_DIR="$BUILD_ROOT/tam-workbench"
 DIST_DIR="$ROOT/dist"
-ZIP_PATH="$DIST_DIR/tam-workbench-v0.3.6-fresh-install.zip"
+ZIP_PATH="$DIST_DIR/tam-workbench-v0.3.7-fresh-install.zip"
 
 rm -rf "$BUILD_ROOT"
 mkdir -p "$PACKAGE_DIR" "$DIST_DIR"

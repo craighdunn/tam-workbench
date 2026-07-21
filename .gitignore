@@ -3,4 +3,28 @@
 __pycache__/
 *.py[cod]
 .DS_Store
-Icon
+Icon?
+
+# Local TAM Workbench data / SQLite
+.tam-workbench/
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets / environment
+.env
+.env.*
+*.pem
+*.key
+*credentials*
+*secrets*
+dobby-auth-profiles.json
+
+# Generated packages/build output
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+logs/

@@ -351,3 +351,11 @@ def test_sidebar_accounts_render_as_single_alphabetical_list():
     assert "groupedAccounts" not in html
     assert "visibleAccounts().map(a => renderSidebarAccount(a))" in html
     assert "localeCompare" in html
+
+
+def test_search_input_preserves_caret_after_filter_rerender():
+    html = dashboard._design_html({"summary": {}, "accounts": [], "kanban": {}, "contacts": {}, "notes": {}})
+
+    assert "selectionStart" in html
+    assert "setSelectionRange(nextCaret, nextCaret)" in html
+    assert "document.getElementById('search')?.focus()" not in html

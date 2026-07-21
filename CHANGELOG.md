@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.7 — Search cursor fix
+
+### Fixed
+
+- Account search now preserves the text cursor position after each live-filter re-render, preventing typed text from appearing backwards.
+
 ## v0.3.6 — Alphabetical account sidebar
 
 ### Changed

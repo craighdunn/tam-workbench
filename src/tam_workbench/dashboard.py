@@ -726,7 +726,17 @@ function render() {{
   bind();
 }}
 function bind() {{
-  const search = document.getElementById('search'); if (search) search.addEventListener('input', e => {{ state.search = e.target.value; render(); document.getElementById('search')?.focus(); }});
+  const search = document.getElementById('search'); if (search) search.addEventListener('input', e => {{
+    const caret = e.target.selectionStart ?? e.target.value.length;
+    state.search = e.target.value;
+    render();
+    const nextSearch = document.getElementById('search');
+    if (nextSearch) {{
+      nextSearch.focus();
+      const nextCaret = Math.min(caret, nextSearch.value.length);
+      nextSearch.setSelectionRange(nextCaret, nextCaret);
+    }}
+  }});
   document.querySelectorAll('[data-account]').forEach(el => el.addEventListener('click', () => {{ state.selectedId = el.dataset.account; state.activeTab = 'tasks'; state.addingToCol = null; state.showAddContact=false; state.showAddNote=false; render(); }}));
   document.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => {{ state.activeTab = el.dataset.tab; render(); }}));
   document.querySelectorAll('[data-add-col]').forEach(el => el.addEventListener('click', () => {{ state.addingToCol = state.addingToCol === el.dataset.addCol ? null : el.dataset.addCol; render(); }}));
