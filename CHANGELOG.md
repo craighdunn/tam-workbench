@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.6 — Alphabetical account sidebar
+
+### Changed
+
+- Account sidebar now shows a single alphabetical list instead of grouping accounts by region/geographic reach.
+
 ## v0.3.5 — Dashboard edit panels and Kanban height polish
 
 ### Changed

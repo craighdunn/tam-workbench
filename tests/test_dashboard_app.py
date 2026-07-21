@@ -325,8 +325,29 @@ def test_contacts_tab_renders_clients_before_showpad_account_team():
 
     assert "Clients" in html
     assert "Showpad Account Team" in html
+    assert "Task Health" in html
     assert "Client Contact" in html
     assert "Showpad Contact" in html
     assert "data-edit-account" in html
     assert "data-archive-contact" in html
     assert html.index("Clients") < html.index("Showpad Account Team")
+
+
+def test_sidebar_accounts_render_as_single_alphabetical_list():
+    html = dashboard._design_html(
+        {
+            "summary": {"account_count": 2, "contact_count": 0},
+            "accounts": [
+                {"id": 1, "name": "Beta Co", "region": "EMEA", "industry": "Software", "health": "healthy", "openTasks": 0, "blocked": 0, "contacts": 0, "nextAction": ""},
+                {"id": 2, "name": "Alpha Co", "region": "North America", "industry": "Software", "health": "healthy", "openTasks": 0, "blocked": 0, "contacts": 0, "nextAction": ""},
+            ],
+            "kanban": {"1": {"inbox": [], "active": [], "waiting": [], "blocked": [], "done": []}},
+            "contacts": {"1": []},
+            "notes": {"1": []},
+            "selectedId": 1,
+        }
+    )
+
+    assert "groupedAccounts" not in html
+    assert "visibleAccounts().map(a => renderSidebarAccount(a))" in html
+    assert "localeCompare" in html

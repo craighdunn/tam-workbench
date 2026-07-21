@@ -536,16 +536,10 @@ function styleObj(o) {{ return Object.entries(o).map(([k,v]) => k.replace(/[A-Z]
 function accountTaskLabel(a) {{ return a.openTasks === 1 ? '1 open task' : `${{a.openTasks}} open tasks`; }}
 function visibleAccounts() {{
   const q = state.search.trim().toLowerCase();
-  return (state.accounts || []).filter(a => !q || a.name.toLowerCase().includes(q));
-}}
-function groupedAccounts() {{
-  const groups = [];
-  for (const acct of visibleAccounts()) {{
-    let group = groups.find(g => g.region === acct.region);
-    if (!group) {{ group = {{ region: acct.region || 'Other', accounts: [] }}; groups.push(group); }}
-    group.accounts.push(acct);
-  }}
-  return groups;
+  return (state.accounts || [])
+    .filter(a => !q || a.name.toLowerCase().includes(q))
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, {{ sensitivity: 'base' }}));
 }}
 function kanbanFor(id) {{
   const key = String(id);
@@ -601,7 +595,7 @@ function renderSidebar() {{
         <input id="search" type="text" placeholder="Search accounts…" value="${{esc(state.search)}}" style="width: 100%; background: #0E1018; border: 1px solid #1C2232; border-radius: 7px; padding: 7px 8px 7px 27px; font-size: 12.5px; color: #C4CFDF; outline: none; font-family: inherit;" />
       </div>
     </div>
-    <div style="flex: 1; overflow-y: auto; padding: 6px 0;">${{groupedAccounts().map(g => `<div style="margin-bottom: 2px;"><div style="padding: 8px 14px 3px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #354258;">${{esc(g.region)}}</div>${{g.accounts.map(a => renderSidebarAccount(a)).join('')}}</div>`).join('')}}</div>
+    <div style="flex: 1; overflow-y: auto; padding: 6px 0;">${{visibleAccounts().map(a => renderSidebarAccount(a)).join('')}}</div>
     <div style="padding: 10px 13px; border-top: 1px solid #161B28; display: flex; align-items: center; gap: 9px; flex-shrink: 0;">
       <div style="width: 28px; height: 28px; background: linear-gradient(135deg, #6382F0, #9B59F5); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0;">CD</div>
       <div style="flex: 1; min-width: 0;"><div style="font-size: 12.5px; font-weight: 500; color: #C4CFDF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Craig Dunn</div><div style="font-size: 10.5px; color: #354258;">Technical Account Manager</div></div>
@@ -627,7 +621,7 @@ function renderHeader(acct, kan) {{
   const hi = getHealth(acct.health); const accent = acct.color || '#6382F0'; const oc = openCount(kan); const bc = (kan.blocked || []).length; const cc = contactsFor(acct.id).length;
   return `<div style="flex-shrink:0;background:#0A0C13;border-bottom:1px solid #161B28;padding:16px 22px;"><div style="display:flex;align-items:flex-start;gap:14px;">
     <div style="width:3px;background:${{accent}};border-radius:2px;align-self:stretch;margin-top:2px;flex-shrink:0;"></div>
-    <div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap;"><h1 style="font-size:21px;font-weight:700;color:#E8EDF8;letter-spacing:-0.03em;line-height:1.2;">${{esc(acct.name)}}</h1><div style="display:inline-flex;align-items:center;gap:5px;background:${{hi.bg}};border-radius:20px;padding:3px 9px 3px 6px;flex-shrink:0;"><div style="width:6px;height:6px;border-radius:50%;background:${{hi.dot}};"></div><span style="font-size:11.5px;font-weight:600;color:${{hi.text}};">${{hi.label}}</span></div><button data-edit-account style="font-size:11px;background:rgba(99,130,240,0.08);color:#6382F0;border:1px solid rgba(99,130,240,0.18);border-radius:6px;padding:3px 8px;cursor:pointer;">Edit</button><button data-archive-account style="font-size:11px;background:rgba(239,68,68,0.06);color:#F87171;border:1px solid rgba(239,68,68,0.18);border-radius:6px;padding:3px 8px;cursor:pointer;">Archive</button></div>
+    <div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap;"><h1 style="font-size:21px;font-weight:700;color:#E8EDF8;letter-spacing:-0.03em;line-height:1.2;">${{esc(acct.name)}}</h1><div title="Task Health" style="display:inline-flex;align-items:center;gap:5px;background:${{hi.bg}};border-radius:20px;padding:3px 9px 3px 6px;flex-shrink:0;"><div style="width:6px;height:6px;border-radius:50%;background:${{hi.dot}};"></div><span style="font-size:10px;font-weight:700;color:#516070;text-transform:uppercase;letter-spacing:0.06em;">Task Health</span><span style="font-size:11.5px;font-weight:600;color:${{hi.text}};">${{hi.label}}</span></div><button data-edit-account style="font-size:11px;background:rgba(99,130,240,0.08);color:#6382F0;border:1px solid rgba(99,130,240,0.18);border-radius:6px;padding:3px 8px;cursor:pointer;">Edit</button><button data-archive-account style="font-size:11px;background:rgba(239,68,68,0.06);color:#F87171;border:1px solid rgba(239,68,68,0.18);border-radius:6px;padding:3px 8px;cursor:pointer;">Archive</button></div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><span style="font-size:12px;color:#425268;">${{esc(acct.industry || 'No industry captured')}}</span><span style="color:#1E2A3A;">·</span><span style="font-size:12px;color:#425268;">${{esc(acct.region || 'Other')}}</span></div>
     ${{acct.nextAction ? `<div style="display:inline-flex;align-items:baseline;gap:8px;background:rgba(99,130,240,0.06);border:1px solid rgba(99,130,240,0.14);border-radius:7px;padding:6px 11px;"><span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6382F0;flex-shrink:0;">Next</span><span style="font-size:12.5px;color:#8090A8;">${{esc(acct.nextAction)}}</span></div>` : ''}}</div>
     <div style="display:flex;gap:7px;flex-shrink:0;align-items:stretch;">${{statCard(oc,'open tasks')}}${{statCard(bc,'blocked', bc>0)}}${{statCard(cc,'contacts')}}</div>
