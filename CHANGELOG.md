@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.8 — Editable contact supporter level and Showpad Owner
+
+### Added
+
+- Contacts now have an editable Supporter Level field with Champion, Supporter, Neutral, and Detractor options.
+- Contacts now have a Showpad Owner checkbox for the main customer-side Showpad admin/platform owner.
+- Dashboard contact create/edit flows now persist Supporter Level and Showpad Owner to SQLite.
+
 ## v0.3.7 — Search cursor fix
 
 ### Fixed

@@ -142,3 +142,33 @@ def test_contacts_can_be_updated_searched_and_deleted(tmp_path):
     deleted = db.delete_contact(contact["id"])
     assert deleted == {"deleted_contact_id": contact["id"]}
     assert db.list_contacts(account_id=account["id"]) == []
+
+
+def test_contact_support_level_and_showpad_owner_are_persisted(tmp_path):
+    db = WorkbenchDB(tmp_path)
+    db.initialize()
+    account = db.create_account(name="Acme")
+
+    owner = db.create_contact(
+        account_id=account["id"],
+        name="Admin One",
+        support_level="supporter",
+        is_showpad_owner=True,
+    )
+    assert owner["support_level"] == "supporter"
+    assert owner["is_showpad_owner"] == 1
+    assert db.search_contacts("supporter")[0]["name"] == "Admin One"
+
+    next_owner = db.create_contact(
+        account_id=account["id"],
+        name="Admin Two",
+        support_level="champion",
+        is_showpad_owner=True,
+    )
+    assert next_owner["is_showpad_owner"] == 1
+    assert db.get_contact(owner["id"])["is_showpad_owner"] == 0
+
+    updated = db.update_contact(owner["id"], support_level="detractor", is_showpad_owner=True)
+    assert updated["support_level"] == "detractor"
+    assert updated["is_showpad_owner"] == 1
+    assert db.get_contact(next_owner["id"])["is_showpad_owner"] == 0

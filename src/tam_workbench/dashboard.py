@@ -86,6 +86,11 @@ def _param_value(params: dict[str, Any], key: str, default: str = "") -> str:
     return str(value or default).strip()
 
 
+def _param_bool(params: dict[str, Any], key: str, default: bool = False) -> bool:
+    value = _param_value(params, key, "true" if default else "false").lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def _handle_dashboard_action(data_dir: str | Path, params: dict[str, Any]) -> dict[str, Any] | None:
     """Persist simple dashboard iframe actions encoded as Streamlit query params."""
     action = _param_value(params, "tw_action")
@@ -139,6 +144,8 @@ def _handle_dashboard_action(data_dir: str | Path, params: dict[str, Any]) -> di
             phone=_param_value(params, "phone"),
             notes=_param_value(params, "notes"),
             is_primary=False,
+            support_level=_param_value(params, "support_level", "neutral"),
+            is_showpad_owner=_param_bool(params, "is_showpad_owner"),
         )
         return {"message": f"Saved contact: {contact['name']}", "contact": contact}
 
@@ -192,6 +199,8 @@ def _handle_dashboard_action(data_dir: str | Path, params: dict[str, Any]) -> di
             phone=_param_value(params, "phone") or None,
             notes=_param_value(params, "notes") or None,
             role=role or None,
+            support_level=_param_value(params, "support_level", "neutral"),
+            is_showpad_owner=_param_bool(params, "is_showpad_owner"),
         )
         return {"message": f"Updated contact: {contact['name']}", "contact": contact}
 
@@ -321,8 +330,10 @@ def _build_design_payload(data: dict[str, Any]) -> dict[str, Any]:
                 "email": contact.get("email") or "",
                 "phone": contact.get("phone") or "",
                 "notes": contact.get("notes") or "",
-                "influence": influence,
+                "influence": contact.get("support_level") or influence,
+                "supportLevel": contact.get("support_level") or influence,
                 "isPrimary": bool(contact.get("is_primary")),
+                "isShowpadOwner": bool(contact.get("is_showpad_owner")),
                 "isShowpadTeam": _is_showpad_team_contact(contact),
             }
         )
@@ -408,6 +419,9 @@ def _design_priority(priority: str) -> str:
 
 
 def _contact_influence(contact: dict[str, Any]) -> str:
+    stored = str(contact.get("support_level") or "").strip().lower()
+    if stored in {"champion", "supporter", "neutral", "detractor"}:
+        return stored
     notes = f"{contact.get('role') or ''} {contact.get('title') or ''} {contact.get('notes') or ''}".lower()
     if contact.get("is_primary") or "champion" in notes or "sponsor" in notes:
         return "champion"
@@ -529,6 +543,7 @@ function getPri(p) {{
 }}
 function getInf(i) {{
   if (i === 'champion') return {{ color: '#4ADE80', bg: 'rgba(34,197,94,0.1)', label: 'Champion' }};
+  if (i === 'supporter') return {{ color: '#38BDF8', bg: 'rgba(56,189,248,0.1)', label: 'Supporter' }};
   if (i === 'detractor') return {{ color: '#F87171', bg: 'rgba(239,68,68,0.1)', label: 'Detractor' }};
   return {{ color: '#6B7A90', bg: 'rgba(255,255,255,0.05)', label: 'Neutral' }};
 }}
@@ -665,10 +680,15 @@ function renderContactSection(title, contacts, helper, emptyText) {{
   return `<section style="margin-bottom:18px;"><div style="display:flex;align-items:baseline;gap:8px;margin:12px 0 9px;"><h3 style="font-size:12.5px;font-weight:700;color:#D8E2F0;text-transform:uppercase;letter-spacing:0.08em;margin:0;">${{esc(title)}}</h3><span style="font-size:11px;color:#354258;">${{contacts.length}}</span></div><div style="font-size:11.5px;color:#425268;margin:-4px 0 10px;">${{esc(helper)}}</div>${{contacts.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px;">${{contacts.map(renderContactCard).join('')}}</div>` : `<div style="padding:20px 0 24px;text-align:center;color:#354258;font-size:13px;border:1px dashed #1A2232;border-radius:10px;background:rgba(255,255,255,0.01);">${{esc(emptyText)}}</div>`}}</section>`;
 }}
 function renderContactCard(c) {{
-  const inf = getInf(c.influence); const initials = (c.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); const avatarBg = c.influence === 'champion' ? 'rgba(99,130,240,0.14)' : c.influence === 'detractor' ? 'rgba(239,68,68,0.12)' : 'rgba(255,255,255,0.05)';
-  return `<div class="con-card" style="background:#0F1320;border:1px solid #1A2232;border-radius:10px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;"><div style="width:40px;height:40px;border-radius:50%;background:${{avatarBg}};color:${{inf.color}};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;letter-spacing:-0.02em;">${{esc(initials)}}</div><div style="flex:1;min-width:0;"><div style="display:flex;gap:6px;align-items:center;margin-bottom:2px;"><div style="font-size:13.5px;font-weight:600;color:#D8E2F0;flex:1;">${{esc(c.name)}}</div><button data-edit-contact="${{esc(c.id)}}" style="background:transparent;border:none;color:#425268;font-size:11px;cursor:pointer;">Edit</button><button data-archive-contact="${{esc(c.id)}}" style="background:transparent;border:none;color:#F87171;font-size:11px;cursor:pointer;">Archive</button></div><div style="font-size:12px;color:#425268;margin-bottom:5px;">${{esc(c.title || 'Contact')}}</div><div style="font-size:11.5px;color:#6382F0;font-family:ui-monospace,monospace;margin-bottom:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${{esc(c.email || '')}}</div><div style="display:flex;gap:5px;flex-wrap:wrap;"><span style="font-size:10.5px;font-weight:600;background:${{inf.bg}};color:${{inf.color}};border-radius:4px;padding:1px 6px;">${{inf.label}}</span>${{c.isShowpadTeam ? '<span style="font-size:10.5px;font-weight:600;background:rgba(99,130,240,0.1);color:#6382F0;border-radius:4px;padding:1px 6px;">Showpad</span>' : '<span style="font-size:10.5px;font-weight:600;background:rgba(255,255,255,0.05);color:#8090A8;border-radius:4px;padding:1px 6px;">Client</span>'}}${{c.isPrimary ? '<span style="font-size:10.5px;font-weight:600;background:rgba(99,130,240,0.1);color:#6382F0;border-radius:4px;padding:1px 6px;">Primary</span>' : ''}}</div></div></div>`;
+  const inf = getInf(c.supportLevel || c.influence);
+  const initials = (c.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+  const avatarBg = c.influence === 'champion' ? 'rgba(99,130,240,0.14)' : c.influence === 'detractor' ? 'rgba(239,68,68,0.12)' : 'rgba(255,255,255,0.05)';
+  return `<div class="con-card" style="background:#0F1320;border:1px solid #1A2232;border-radius:10px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;"><div style="width:40px;height:40px;border-radius:50%;background:${{avatarBg}};color:${{inf.color}};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;letter-spacing:-0.02em;">${{esc(initials)}}</div><div style="flex:1;min-width:0;"><div style="display:flex;gap:6px;align-items:center;margin-bottom:2px;"><div style="font-size:13.5px;font-weight:600;color:#D8E2F0;flex:1;">${{esc(c.name)}}</div><button data-edit-contact="${{esc(c.id)}}" style="background:transparent;border:none;color:#425268;font-size:11px;cursor:pointer;">Edit</button><button data-archive-contact="${{esc(c.id)}}" style="background:transparent;border:none;color:#F87171;font-size:11px;cursor:pointer;">Archive</button></div><div style="font-size:12px;color:#425268;margin-bottom:5px;">${{esc(c.title || 'Contact')}}</div><div style="font-size:11.5px;color:#6382F0;font-family:ui-monospace,monospace;margin-bottom:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${{esc(c.email || '')}}</div><div style="display:flex;gap:5px;flex-wrap:wrap;"><span style="font-size:10.5px;font-weight:600;background:${{inf.bg}};color:${{inf.color}};border-radius:4px;padding:1px 6px;">${{inf.label}}</span>${{c.isShowpadTeam ? '<span style="font-size:10.5px;font-weight:600;background:rgba(99,130,240,0.1);color:#6382F0;border-radius:4px;padding:1px 6px;">Showpad</span>' : '<span style="font-size:10.5px;font-weight:600;background:rgba(255,255,255,0.05);color:#8090A8;border-radius:4px;padding:1px 6px;">Client</span>'}}${{c.isShowpadOwner ? '<span style="font-size:10.5px;font-weight:600;background:rgba(74,222,128,0.1);color:#4ADE80;border-radius:4px;padding:1px 6px;">Showpad Owner</span>' : ''}}${{c.isPrimary ? '<span style="font-size:10.5px;font-weight:600;background:rgba(99,130,240,0.1);color:#6382F0;border-radius:4px;padding:1px 6px;">Primary</span>' : ''}}</div></div></div>`;
 }}
-function renderAddContactForm() {{ return `<div style="background:#0D1020;border:1px solid #1A2232;border-radius:10px;padding:16px;margin-bottom:14px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><input id="new-con-name" class="form-input" placeholder="Name *" /><input id="new-con-title" class="form-input" placeholder="Title / Role" /></div><div style="display:grid;grid-template-columns:1fr 180px;gap:8px;margin-bottom:10px;"><input id="new-con-email" class="form-input" placeholder="Email address" /><select id="new-con-kind" class="form-input" title="Contact type"><option value="client" selected>Client Contact</option><option value="showpad">Showpad Contact</option></select></div><div style="display:flex;gap:6px;"><button data-save-contact style="font-size:12.5px;font-weight:600;background:#6382F0;color:#fff;border:none;border-radius:7px;padding:7px 14px;cursor:pointer;">Add Contact</button><button data-toggle-contact style="font-size:12.5px;font-weight:500;background:rgba(255,255,255,0.05);color:#425268;border:1px solid #1E2A3A;border-radius:7px;padding:7px 12px;cursor:pointer;">Cancel</button></div></div>`; }}
+function supportLevelOptions(value='neutral') {{
+  return `<option value="champion" ${{value==='champion'?'selected':''}}>Champion</option><option value="supporter" ${{value==='supporter'?'selected':''}}>Supporter</option><option value="neutral" ${{(value||'neutral')==='neutral'?'selected':''}}>Neutral</option><option value="detractor" ${{value==='detractor'?'selected':''}}>Detractor</option>`;
+}}
+function renderAddContactForm() {{ return `<div style="background:#0D1020;border:1px solid #1A2232;border-radius:10px;padding:16px;margin-bottom:14px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><input id="new-con-name" class="form-input" placeholder="Name *" /><input id="new-con-title" class="form-input" placeholder="Title / Role" /></div><div style="display:grid;grid-template-columns:1fr 180px;gap:8px;margin-bottom:10px;"><input id="new-con-email" class="form-input" placeholder="Email address" /><select id="new-con-kind" class="form-input" title="Contact type"><option value="client" selected>Client Contact</option><option value="showpad">Showpad Contact</option></select></div><div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-bottom:10px;"><select id="new-con-support" class="form-input" title="Supporter Level">${{supportLevelOptions('neutral')}}</select><label style="display:flex;align-items:center;gap:7px;font-size:12px;color:#8090A8;white-space:nowrap;"><input id="new-con-owner" type="checkbox" style="accent-color:#6382F0;" /> Showpad Owner</label></div><div style="display:flex;gap:6px;"><button data-save-contact style="font-size:12.5px;font-weight:600;background:#6382F0;color:#fff;border:none;border-radius:7px;padding:7px 14px;cursor:pointer;">Add Contact</button><button data-toggle-contact style="font-size:12.5px;font-weight:500;background:rgba(255,255,255,0.05);color:#425268;border:1px solid #1E2A3A;border-radius:7px;padding:7px 12px;cursor:pointer;">Cancel</button></div></div>`; }}
 function renderNotes(acct) {{
   const raw = notesFor(acct.id);
   return `<div style="padding:14px 22px 10px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;font-weight:600;color:#8090A8;">${{raw.length}} Notes</span><button data-toggle-note style="font-size:12px;font-weight:600;background:${{state.showAddNote ? 'rgba(255,255,255,0.05)' : 'rgba(99,130,240,0.1)'}};color:${{state.showAddNote ? '#425268' : '#6382F0'}};border:1px solid ${{state.showAddNote ? '#1E2A3A' : 'rgba(99,130,240,0.2)'}};border-radius:7px;padding:5px 12px;cursor:pointer;">${{state.showAddNote ? 'Cancel' : '+ Write a note'}}</button></div><div style="padding:0 22px 28px;max-width:760px;">${{state.showAddNote ? renderAddNoteForm() : ''}}${{raw.length ? raw.map(renderNote).join('') : '<div style="padding:36px 0;text-align:center;color:#354258;font-size:13px;">No notes yet. Write one above.</div>'}}</div>`;
@@ -707,7 +727,8 @@ function renderContactEditor(c) {{
   return `<div style="display:grid;gap:14px;">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${{label('Name', `<input id="edit-contact-name" value="${{esc(c.name || '')}}" style="${{fieldStyle()}}" />`)}}${{label('Title / role', `<input id="edit-contact-title" value="${{esc(c.title || '')}}" style="${{fieldStyle()}}" />`)}}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${{label('Email', `<input id="edit-contact-email" value="${{esc(c.email || '')}}" style="${{fieldStyle()}}" />`)}}${{label('Phone', `<input id="edit-contact-phone" value="${{esc(c.phone || '')}}" style="${{fieldStyle()}}" />`)}}</div>
-    ${{label('Contact type', `<select id="edit-contact-kind" style="${{fieldStyle()}}"><option value="client" ${{kind==='client'?'selected':''}}>Client Contact</option><option value="showpad" ${{kind==='showpad'?'selected':''}}>Showpad Contact</option></select>`)}}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${{label('Contact type', `<select id="edit-contact-kind" style="${{fieldStyle()}}"><option value="client" ${{kind==='client'?'selected':''}}>Client Contact</option><option value="showpad" ${{kind==='showpad'?'selected':''}}>Showpad Contact</option></select>`)}}${{label('Supporter Level', `<select id="edit-contact-support" style="${{fieldStyle()}}">${{supportLevelOptions(c.supportLevel || c.influence || 'neutral')}}</select>`)}}</div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#AEBBD0;"><input id="edit-contact-owner" type="checkbox" ${{c.isShowpadOwner ? 'checked' : ''}} style="accent-color:#6382F0;" /> Showpad Owner <span style="font-size:11.5px;color:#516070;">Main customer-side Showpad admin / primary platform owner</span></label>
     ${{label('Notes', `<textarea id="edit-contact-notes" rows="6" style="${{fieldStyle()}}resize:vertical;line-height:1.55;">${{esc(c.notes || '')}}</textarea>`)}}
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;"><button data-editor-cancel onclick="state.editor=null;render();" class="editor-secondary">Cancel</button><button data-editor-save-contact="${{esc(c.id)}}" onclick="saveActiveEditor()" class="editor-primary">Save contact</button></div>
   </div>`;
@@ -813,8 +834,12 @@ function saveContactEditor(id) {{
   const phone = document.getElementById('edit-contact-phone')?.value.trim() || '';
   const notes = document.getElementById('edit-contact-notes')?.value.trim() || '';
   const kind = document.getElementById('edit-contact-kind')?.value || 'client';
-  c.name = name; c.title = title; c.email = email; c.phone = phone; c.notes = notes; c.isShowpadTeam = kind === 'showpad'; state.editor = null; render();
-  persistDashboardAction('update_contact', {{ contact_id: id, name: c.name, title: c.title, email: c.email, phone: c.phone, notes: c.notes, contact_kind: kind }});
+  const support_level = document.getElementById('edit-contact-support')?.value || 'neutral';
+  const is_showpad_owner = !!document.getElementById('edit-contact-owner')?.checked;
+  c.name = name; c.title = title; c.email = email; c.phone = phone; c.notes = notes; c.isShowpadTeam = kind === 'showpad'; c.influence = support_level; c.supportLevel = support_level; c.isShowpadOwner = is_showpad_owner;
+  if (is_showpad_owner) contactsFor(state.selectedId).forEach(x => {{ if (String(x.id) !== String(id)) x.isShowpadOwner = false; }});
+  state.editor = null; render();
+  persistDashboardAction('update_contact', {{ contact_id: id, name: c.name, title: c.title, email: c.email, phone: c.phone, notes: c.notes, contact_kind: kind, support_level, is_showpad_owner }});
 }}
 function archiveContact(id) {{
   const c = findContact(id); if (!c || !confirm(`Archive contact "${{c.name}}"?`)) return;
@@ -857,8 +882,12 @@ function addContact() {{
   const name = document.getElementById('new-con-name')?.value.trim(); if (!name) return;
   const title = document.getElementById('new-con-title')?.value.trim() || 'Contact'; const email = document.getElementById('new-con-email')?.value.trim() || '';
   const contact_kind = document.getElementById('new-con-kind')?.value || 'client';
-  const key = String(state.selectedId); state.contacts[key] = [...(state.contacts[key] || []), {{ id:'saving-'+Date.now(), name, title, email, influence:'neutral', isPrimary:false, isShowpadTeam: contact_kind === 'showpad' }}]; state.showAddContact=false; render();
-  persistDashboardAction('create_contact', {{ account_id: state.selectedId, name, title, email, contact_kind }});
+  const support_level = document.getElementById('new-con-support')?.value || 'neutral';
+  const is_showpad_owner = !!document.getElementById('new-con-owner')?.checked;
+  const key = String(state.selectedId);
+  if (is_showpad_owner) contactsFor(state.selectedId).forEach(x => {{ x.isShowpadOwner = false; }});
+  state.contacts[key] = [...(state.contacts[key] || []), {{ id:'saving-'+Date.now(), name, title, email, influence:support_level, supportLevel:support_level, isPrimary:false, isShowpadOwner:is_showpad_owner, isShowpadTeam: contact_kind === 'showpad' }}]; state.showAddContact=false; render();
+  persistDashboardAction('create_contact', {{ account_id: state.selectedId, name, title, email, contact_kind, support_level, is_showpad_owner }});
 }}
 function addNote() {{
   if (String(state.selectedId) === '__empty__') {{ alert('Create an account in Claude Desktop before adding dashboard items.'); return; }}

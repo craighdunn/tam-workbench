@@ -14,6 +14,7 @@ TASK_TYPES = {
 }
 TASK_STATUSES = {"inbox", "active", "waiting", "blocked", "done", "archived"}
 TASK_PRIORITIES = {"low", "normal", "high", "urgent"}
+SUPPORT_LEVELS = {"champion", "supporter", "neutral", "detractor"}
 DOCUMENT_TYPES = {
     "customer_email", "internal_escalation", "meeting_agenda", "meeting_recap",
     "troubleshooting_summary", "executive_summary", "qbr_notes", "research_summary",
@@ -68,7 +69,8 @@ class WorkbenchDB:
             conn.executescript(SCHEMA)
             self._ensure_account_color_column(conn)
             self._ensure_archive_columns(conn)
-            conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '3')")
+            self._ensure_contact_relationship_columns(conn)
+            conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '4')")
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -145,20 +147,26 @@ class WorkbenchDB:
             return self.get_account(account_id, conn=conn)
 
     def create_contact(self, account_id: int, name: str, email: str = "", role: str = "", title: str = "",
-                       phone: str = "", notes: str = "", is_primary: bool | int = False) -> dict[str, Any]:
+                       phone: str = "", notes: str = "", is_primary: bool | int = False,
+                       support_level: str = "neutral", is_showpad_owner: bool | int = False) -> dict[str, Any]:
         if not name or not name.strip():
             raise ValueError("contact name is required")
         self.get_account(account_id)
         ts = now_iso()
         primary = 1 if bool(is_primary) else 0
+        owner = 1 if bool(is_showpad_owner) else 0
+        support_level = (support_level or "neutral").strip().lower()
+        self._validate_choice("support_level", support_level, SUPPORT_LEVELS)
         with self.connect() as conn:
             if primary:
                 conn.execute("UPDATE contacts SET is_primary = 0 WHERE account_id = ?", (account_id,))
+            if owner:
+                conn.execute("UPDATE contacts SET is_showpad_owner = 0 WHERE account_id = ?", (account_id,))
             cur = conn.execute(
                 """INSERT INTO contacts
-                (account_id, name, email, role, title, phone, notes, is_primary, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (account_id, name.strip(), email.strip(), role, title, phone, notes, primary, ts, ts),
+                (account_id, name, email, role, title, phone, notes, is_primary, support_level, is_showpad_owner, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (account_id, name.strip(), email.strip(), role, title, phone, notes, primary, support_level, owner, ts, ts),
             )
             return self.get_contact(cur.lastrowid, conn=conn)
 
@@ -189,7 +197,7 @@ class WorkbenchDB:
         return self.query_all(sql, tuple(params))
 
     def update_contact(self, contact_id: int, **fields: Any) -> dict[str, Any]:
-        allowed = {"account_id", "name", "email", "role", "title", "phone", "notes", "is_primary"}
+        allowed = {"account_id", "name", "email", "role", "title", "phone", "notes", "is_primary", "support_level", "is_showpad_owner"}
         updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
         if "name" in updates and not str(updates["name"]).strip():
             raise ValueError("contact name is required")
@@ -199,6 +207,11 @@ class WorkbenchDB:
             updates["name"] = str(updates["name"]).strip()
         if "is_primary" in updates:
             updates["is_primary"] = 1 if bool(updates["is_primary"]) else 0
+        if "is_showpad_owner" in updates:
+            updates["is_showpad_owner"] = 1 if bool(updates["is_showpad_owner"]) else 0
+        if "support_level" in updates:
+            updates["support_level"] = str(updates["support_level"] or "neutral").strip().lower()
+            self._validate_choice("support_level", updates["support_level"], SUPPORT_LEVELS)
         if "account_id" in updates:
             self.get_account(int(updates["account_id"]))
         if not updates:
@@ -209,6 +222,8 @@ class WorkbenchDB:
             target_account_id = int(updates.get("account_id", existing["account_id"]))
             if updates.get("is_primary") == 1:
                 conn.execute("UPDATE contacts SET is_primary = 0 WHERE account_id = ? AND id != ?", (target_account_id, contact_id))
+            if updates.get("is_showpad_owner") == 1:
+                conn.execute("UPDATE contacts SET is_showpad_owner = 0 WHERE account_id = ? AND id != ?", (target_account_id, contact_id))
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             params = tuple(updates.values()) + (contact_id,)
             conn.execute(f"UPDATE contacts SET {set_clause} WHERE id = ?", params)
@@ -232,10 +247,10 @@ class WorkbenchDB:
             """SELECT c.*, a.name AS account_name
             FROM contacts c LEFT JOIN accounts a ON a.id = c.account_id
             WHERE (c.name LIKE ? OR c.email LIKE ? OR c.role LIKE ? OR c.title LIKE ? OR c.phone LIKE ?
-            OR c.notes LIKE ? OR a.name LIKE ?)
+            OR c.notes LIKE ? OR c.support_level LIKE ? OR a.name LIKE ?)
             """ + archive_clause + """
             ORDER BY c.is_primary DESC, c.updated_at DESC LIMIT ?""",
-            (like, like, like, like, like, like, like, limit),
+            (like, like, like, like, like, like, like, like, limit),
         )
 
     def create_task(self, title: str, account_id: int | None = None, type: str = "general", status: str = "inbox",
@@ -660,6 +675,25 @@ class WorkbenchDB:
             if "archived_at" not in columns:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN archived_at TEXT NOT NULL DEFAULT ''")
 
+    def _ensure_contact_relationship_columns(self, conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(contacts)").fetchall()}
+        if "support_level" not in columns:
+            conn.execute("ALTER TABLE contacts ADD COLUMN support_level TEXT NOT NULL DEFAULT 'neutral'")
+            conn.execute(
+                """UPDATE contacts
+                SET support_level = CASE
+                    WHEN is_primary = 1 OR LOWER(COALESCE(role, '') || ' ' || COALESCE(title, '') || ' ' || COALESCE(notes, '')) LIKE '%champion%'
+                         OR LOWER(COALESCE(role, '') || ' ' || COALESCE(title, '') || ' ' || COALESCE(notes, '')) LIKE '%sponsor%'
+                    THEN 'champion'
+                    WHEN LOWER(COALESCE(role, '') || ' ' || COALESCE(title, '') || ' ' || COALESCE(notes, '')) LIKE '%detractor%'
+                         OR LOWER(COALESCE(role, '') || ' ' || COALESCE(title, '') || ' ' || COALESCE(notes, '')) LIKE '%blocker%'
+                    THEN 'detractor'
+                    ELSE 'neutral'
+                END"""
+            )
+        if "is_showpad_owner" not in columns:
+            conn.execute("ALTER TABLE contacts ADD COLUMN is_showpad_owner INTEGER NOT NULL DEFAULT 0")
+
 
     def _fetch_all(self, sql: str, params: tuple[Any, ...], conn: sqlite3.Connection | None) -> list[dict[str, Any]]:
         if conn is not None:
@@ -723,6 +757,8 @@ CREATE TABLE IF NOT EXISTS contacts (
     phone TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
     is_primary INTEGER NOT NULL DEFAULT 0,
+    support_level TEXT NOT NULL DEFAULT 'neutral',
+    is_showpad_owner INTEGER NOT NULL DEFAULT 0,
     archived_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

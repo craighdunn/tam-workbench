@@ -40,7 +40,7 @@ class WorkbenchTools:
 
     def create_contact(self, args: dict[str, Any]) -> dict[str, Any]:
         return self._wrap("contact", lambda: self.db.create_contact(**_filter(args, {
-            "account_id", "name", "email", "role", "title", "phone", "notes", "is_primary"
+            "account_id", "name", "email", "role", "title", "phone", "notes", "is_primary", "support_level", "is_showpad_owner"
         })))
 
     def list_contacts(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -54,7 +54,7 @@ class WorkbenchTools:
 
     def update_contact(self, args: dict[str, Any]) -> dict[str, Any]:
         contact_id = int(args["contact_id"])
-        fields = _filter(args, {"account_id", "name", "email", "role", "title", "phone", "notes", "is_primary"})
+        fields = _filter(args, {"account_id", "name", "email", "role", "title", "phone", "notes", "is_primary", "support_level", "is_showpad_owner"})
         return self._wrap("contact", lambda: self.db.update_contact(contact_id, **fields))
 
     def delete_contact(self, args: dict[str, Any]) -> dict[str, Any]:

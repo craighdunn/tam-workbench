@@ -49,7 +49,8 @@ def build_server(data_dir: str | Path | None = None) -> FastMCP:
 
     @mcp.tool()
     def create_contact(account_id: int, name: str, email: str = "", role: str = "", title: str = "",
-                       phone: str = "", notes: str = "", is_primary: bool = False) -> dict[str, Any]:
+                       phone: str = "", notes: str = "", is_primary: bool = False,
+                       support_level: str = "neutral", is_showpad_owner: bool = False) -> dict[str, Any]:
         """Create a structured contact/stakeholder linked to an account."""
         return tools.create_contact(locals())
 
@@ -67,7 +68,8 @@ def build_server(data_dir: str | Path | None = None) -> FastMCP:
     def update_contact(contact_id: int, account_id: int | None = None, name: str | None = None,
                        email: str | None = None, role: str | None = None, title: str | None = None,
                        phone: str | None = None, notes: str | None = None,
-                       is_primary: bool | None = None) -> dict[str, Any]:
+                       is_primary: bool | None = None, support_level: str | None = None,
+                       is_showpad_owner: bool | None = None) -> dict[str, Any]:
         """Update fields on a contact/stakeholder."""
         return tools.update_contact(locals())
 

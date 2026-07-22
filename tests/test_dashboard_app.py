@@ -126,6 +126,8 @@ def test_dashboard_query_actions_create_task_contact_and_note(tmp_path):
             "name": "Jane Smith",
             "title": "Executive Sponsor",
             "email": "jane@example.com",
+            "support_level": "champion",
+            "is_showpad_owner": "true",
         },
     )
     note_result = dashboard._handle_dashboard_action(
@@ -147,6 +149,8 @@ def test_dashboard_query_actions_create_task_contact_and_note(tmp_path):
     assert tasks[0]["priority"] == "normal"
     assert contact_result["contact"]["email"] == "jane@example.com"
     assert contacts[0]["name"] == "Jane Smith"
+    assert contacts[0]["support_level"] == "champion"
+    assert contacts[0]["is_showpad_owner"] == 1
     assert note_result["note"]["body"] == "Dashboard note body"
     assert notes[0]["source"] == "Dashboard"
 
@@ -168,7 +172,7 @@ def test_contact_payload_separates_clients_from_showpad_account_team(tmp_path):
     db = WorkbenchDB(tmp_path)
     db.initialize()
     account = db.create_account(name="Acme")
-    db.create_contact(account_id=account["id"], name="Client Admin", email="admin@example.com", role="Admin")
+    db.create_contact(account_id=account["id"], name="Client Admin", email="admin@example.com", role="Admin", support_level="supporter", is_showpad_owner=True)
     db.create_contact(account_id=account["id"], name="Showpad TAM", email="tam@showpad.com", role="TAM")
 
     payload = dashboard._build_design_payload(
@@ -193,6 +197,8 @@ def test_contact_payload_separates_clients_from_showpad_account_team(tmp_path):
     contacts = payload["contacts"][str(account["id"])]
     assert contacts[0]["name"] == "Client Admin"
     assert contacts[0]["isShowpadTeam"] is False
+    assert contacts[0]["supportLevel"] == "supporter"
+    assert contacts[0]["isShowpadOwner"] is True
     assert contacts[1]["name"] == "Showpad TAM"
     assert contacts[1]["isShowpadTeam"] is True
 
@@ -328,6 +334,10 @@ def test_contacts_tab_renders_clients_before_showpad_account_team():
     assert "Task Health" in html
     assert "Client Contact" in html
     assert "Showpad Contact" in html
+    assert "Supporter Level" in html
+    assert "Showpad Owner" in html
+    assert "new-con-support" in html
+    assert "edit-contact-owner" in html
     assert "data-edit-account" in html
     assert "data-archive-contact" in html
     assert html.index("Clients") < html.index("Showpad Account Team")

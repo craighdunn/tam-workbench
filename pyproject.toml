@@ -1,6 +1,6 @@
 [project]
 name = "tam-workbench"
-version = "0.3.7"
+version = "0.3.8"
 description = "Local MCP-enabled TAM Workbench for Claude Desktop with account dashboard, contacts, tasks, notes, and reporting"
 readme = "README.md"
 requires-python = ">=3.11"

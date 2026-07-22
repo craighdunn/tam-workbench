@@ -1,17 +1,23 @@
+# Python / virtualenv
 .venv/
-.pytest_cache/
 __pycache__/
 *.py[cod]
-.DS_Store
-Icon?
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
 
-# Local TAM Workbench data / SQLite
+# macOS
+.DS_Store
+Icon
+
+# Local TAM Workbench data
 .tam-workbench/
 *.db
 *.sqlite
 *.sqlite3
 
-# Secrets / environment
+# Secrets / credentials
 .env
 .env.*
 *.pem
@@ -20,11 +26,8 @@ Icon?
 *secrets*
 dobby-auth-profiles.json
 
-# Generated packages/build output
+# Generated packages / build output
 dist/
 build/
-*.egg-info/
-
-# Logs
 *.log
 logs/
