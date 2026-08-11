@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.9 — Account Links tab and External Contacts
+
+### Added
+
+- New `account_links` table in SQLite (schema v5) stores per-account quick links with type, label, and URL.
+- Link types: Showpad Instance, Rocket Lane, Salesforce Account, Salesforce Opportunity, Company Website, Other.
+- Links tab in the dashboard with Add / Edit / Archive support, rendered with type-colored badges and direct Open ↗ button.
+- External Contact as a new contact type alongside Client Contact and Showpad Contact.
+- Contacts tab now renders three sections: Clients, External Contacts (partners/contractors), and Showpad Account Team.
+- Dashboard save bridge handles `create_link`, `update_link`, and `archive_link` actions.
+- MCP tools: `create_link`, `list_links`, `get_link`, `update_link`, `archive_link`.
+- `get_account_context` now includes account links in its response.
+
 ## v0.3.8 — Editable contact supporter level and Showpad Owner
 
 ### Added

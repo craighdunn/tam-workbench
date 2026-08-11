@@ -19,6 +19,7 @@ def build_dashboard_data(data_dir: str | Path | None = None) -> dict[str, Any]:
 
     accounts = db.list_accounts(limit=500)
     contacts = db.list_contacts(limit=1000)
+    links = db.list_links()
     tasks = db.query_all(
         """
         SELECT t.*, a.name AS account_name, a.account_color AS account_color
@@ -65,6 +66,7 @@ def build_dashboard_data(data_dir: str | Path | None = None) -> dict[str, Any]:
         "db_path": str(db.db_path),
         "accounts": accounts,
         "contacts": contacts,
+        "links": links,
         "tasks": tasks,
         "documents": documents,
         "notes": notes,

@@ -117,6 +117,28 @@ class WorkbenchTools:
     def export_document_markdown(self, args: dict[str, Any]) -> dict[str, Any]:
         return self._wrap("path", lambda: str(self.db.export_document_markdown(int(args["document_id"]))))
 
+    def create_link(self, args: dict[str, Any]) -> dict[str, Any]:
+        return self._wrap("link", lambda: self.db.create_link(
+            account_id=int(args["account_id"]),
+            link_type=args.get("link_type", "other"),
+            label=args.get("label", ""),
+            url=args.get("url", ""),
+        ))
+
+    def list_links(self, args: dict[str, Any]) -> dict[str, Any]:
+        return self._wrap("links", lambda: self.db.list_links(account_id=args.get("account_id")))
+
+    def get_link(self, args: dict[str, Any]) -> dict[str, Any]:
+        return self._wrap("link", lambda: self.db.get_link(int(args["link_id"])))
+
+    def update_link(self, args: dict[str, Any]) -> dict[str, Any]:
+        link_id = int(args["link_id"])
+        fields = _filter(args, {"link_type", "label", "url"})
+        return self._wrap("link", lambda: self.db.update_link(link_id, **fields))
+
+    def archive_link(self, args: dict[str, Any]) -> dict[str, Any]:
+        return self._wrap("link", lambda: self.db.archive_link(int(args["link_id"])))
+
     def get_account_context(self, args: dict[str, Any]) -> dict[str, Any]:
         return self._wrap("context", lambda: self.db.get_account_context(int(args["account_id"])))
 

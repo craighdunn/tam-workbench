@@ -173,8 +173,33 @@ def build_server(data_dir: str | Path | None = None) -> FastMCP:
         return tools.export_document_markdown(locals())
 
     @mcp.tool()
+    def create_link(account_id: int, link_type: str = "other", label: str = "", url: str = "") -> dict[str, Any]:
+        """Add a quick link to an account. link_type: showpad, rocketlane, sf-account, sf-opportunity, website, other."""
+        return tools.create_link(locals())
+
+    @mcp.tool()
+    def list_links(account_id: int | None = None) -> dict[str, Any]:
+        """List account links, optionally filtered by account."""
+        return tools.list_links(locals())
+
+    @mcp.tool()
+    def get_link(link_id: int) -> dict[str, Any]:
+        """Retrieve one account link by ID."""
+        return tools.get_link(locals())
+
+    @mcp.tool()
+    def update_link(link_id: int, link_type: str | None = None, label: str | None = None, url: str | None = None) -> dict[str, Any]:
+        """Update fields on an account link."""
+        return tools.update_link(locals())
+
+    @mcp.tool()
+    def archive_link(link_id: int) -> dict[str, Any]:
+        """Archive an account link."""
+        return tools.archive_link(locals())
+
+    @mcp.tool()
     def get_account_context(account_id: int) -> dict[str, Any]:
-        """Return account details with linked tasks, notes, and documents."""
+        """Return account details with linked tasks, contacts, notes, documents, and links."""
         return tools.get_account_context(locals())
 
     @mcp.tool()

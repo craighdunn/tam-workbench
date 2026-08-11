@@ -124,6 +124,34 @@ def _handle_dashboard_action(data_dir: str | Path, params: dict[str, Any]) -> di
         )
         return {"message": f"Saved task: {task['title']}", "task": task}
 
+    if action == "create_link":
+        account_id = _dashboard_account_id(params)
+        url = _param_value(params, "url")
+        if not url:
+            raise ValueError("Link URL is required")
+        link = db.create_link(
+            account_id=account_id,
+            link_type=_param_value(params, "link_type", "other"),
+            label=_param_value(params, "label"),
+            url=url,
+        )
+        return {"message": f"Saved link: {link['label'] or link['url']}", "link": link}
+
+    if action == "update_link":
+        link_id = int(_param_value(params, "link_id"))
+        link = db.update_link(
+            link_id,
+            link_type=_param_value(params, "link_type") or None,
+            label=_param_value(params, "label") or None,
+            url=_param_value(params, "url") or None,
+        )
+        return {"message": f"Updated link: {link['label'] or link['url']}", "link": link}
+
+    if action == "archive_link":
+        link_id = int(_param_value(params, "link_id"))
+        link = db.archive_link(link_id)
+        return {"message": f"Archived link: {link['label'] or link['url']}", "link": link}
+
     if action == "create_contact":
         account_id = _dashboard_account_id(params)
         name = _param_value(params, "name")
@@ -133,6 +161,8 @@ def _handle_dashboard_action(data_dir: str | Path, params: dict[str, Any]) -> di
         role = _param_value(params, "role")
         if contact_kind == "showpad" and "showpad" not in role.lower():
             role = role or "Showpad Contact"
+        elif contact_kind == "external" and not role:
+            role = "External Contact"
         elif contact_kind == "client" and not role:
             role = "Client Contact"
         contact = db.create_contact(
@@ -189,6 +219,8 @@ def _handle_dashboard_action(data_dir: str | Path, params: dict[str, Any]) -> di
         role = _param_value(params, "role")
         if contact_kind == "showpad" and "showpad" not in role.lower():
             role = role or "Showpad Contact"
+        elif contact_kind == "external" and not role:
+            role = "External Contact"
         elif contact_kind == "client" and not role:
             role = "Client Contact"
         contact = db.update_contact(
@@ -292,6 +324,7 @@ def _build_design_payload(data: dict[str, Any]) -> dict[str, Any]:
     tasks = data.get("tasks", [])
     contacts = data.get("contacts", [])
     notes = data.get("notes", [])
+    raw_links = data.get("links", [])
 
     task_groups: dict[str, dict[str, list[dict[str, Any]]]] = {}
     for task in tasks:
@@ -321,12 +354,15 @@ def _build_design_payload(data: dict[str, Any]) -> dict[str, Any]:
         if account_id is None:
             continue
         influence = _contact_influence(contact)
+        role = contact.get("role") or ""
+        is_external = role == "External Contact"
+        is_showpad = _is_showpad_team_contact(contact) and not is_external
         contact_groups.setdefault(str(account_id), []).append(
             {
                 "id": str(contact.get("id") or len(contact_groups.get(str(account_id), []))),
                 "name": contact.get("name") or "Unnamed contact",
-                "title": contact.get("title") or contact.get("role") or "Contact",
-                "role": contact.get("role") or "",
+                "title": contact.get("title") or "Contact",
+                "role": role,
                 "email": contact.get("email") or "",
                 "phone": contact.get("phone") or "",
                 "notes": contact.get("notes") or "",
@@ -334,7 +370,22 @@ def _build_design_payload(data: dict[str, Any]) -> dict[str, Any]:
                 "supportLevel": contact.get("support_level") or influence,
                 "isPrimary": bool(contact.get("is_primary")),
                 "isShowpadOwner": bool(contact.get("is_showpad_owner")),
-                "isShowpadTeam": _is_showpad_team_contact(contact),
+                "isShowpadTeam": is_showpad,
+                "isExternal": is_external,
+            }
+        )
+
+    link_groups: dict[str, list[dict[str, Any]]] = {}
+    for link in raw_links:
+        account_id = link.get("account_id")
+        if account_id is None:
+            continue
+        link_groups.setdefault(str(account_id), []).append(
+            {
+                "id": str(link.get("id")),
+                "type": link.get("link_type") or "other",
+                "label": link.get("label") or "",
+                "url": link.get("url") or "",
             }
         )
 
@@ -378,6 +429,7 @@ def _build_design_payload(data: dict[str, Any]) -> dict[str, Any]:
         task_groups.setdefault(str(account_id), {status_name: [] for status_name in DESIGN_STATUSES})
         contact_groups.setdefault(str(account_id), [])
         note_groups.setdefault(str(account_id), [])
+        link_groups.setdefault(str(account_id), [])
 
     if not accounts:
         accounts.append(
@@ -397,6 +449,7 @@ def _build_design_payload(data: dict[str, Any]) -> dict[str, Any]:
         task_groups["__empty__"] = {column: [] for column in ["inbox", "active", "waiting", "blocked", "done"]}
         contact_groups["__empty__"] = []
         note_groups["__empty__"] = []
+        link_groups["__empty__"] = []
 
     spectrum = next((account for account in accounts if str(account["name"]).lower() == "spectrum"), None)
     selected_id = spectrum["id"] if spectrum else accounts[0]["id"]
@@ -406,6 +459,7 @@ def _build_design_payload(data: dict[str, Any]) -> dict[str, Any]:
         "kanban": task_groups,
         "contacts": contact_groups,
         "notes": note_groups,
+        "links": link_groups,
         "selectedId": selected_id,
     }
 
@@ -521,12 +575,14 @@ const state = {{
   kanban: JSON.parse(JSON.stringify(BOOT.kanban || {{}})),
   contacts: JSON.parse(JSON.stringify(BOOT.contacts || {{}})),
   notes: JSON.parse(JSON.stringify(BOOT.notes || {{}})),
+  links: JSON.parse(JSON.stringify(BOOT.links || {{}})),
   expandedNotes: {{}},
   drag: null,
   dropTarget: null,
   addingToCol: null,
   showAddContact: false,
   showAddNote: false,
+  showAddLink: false,
   editor: null,
 }};
 function esc(v) {{ return String(v ?? '').replace(/[&<>\"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[ch])); }}
@@ -563,6 +619,16 @@ function kanbanFor(id) {{
 }}
 function contactsFor(id) {{ return state.contacts[String(id)] || []; }}
 function notesFor(id) {{ return state.notes[String(id)] || []; }}
+function linksFor(id) {{ return state.links[String(id)] || []; }}
+const LINK_TYPE_META = {{
+  showpad:        {{ label: 'Showpad',    color: '#6382F0', bg: 'rgba(99,130,240,0.12)' }},
+  rocketlane:     {{ label: 'Rocket Lane',color: '#9B59F5', bg: 'rgba(155,89,245,0.12)' }},
+  'sf-account':   {{ label: 'Salesforce', color: '#38BDF8', bg: 'rgba(56,189,248,0.12)' }},
+  'sf-opportunity':{{ label: 'SF Opp',    color: '#38BDF8', bg: 'rgba(56,189,248,0.12)' }},
+  website:        {{ label: 'Website',    color: '#4ADE80', bg: 'rgba(74,222,128,0.10)' }},
+  other:          {{ label: 'Link',       color: '#8090A8', bg: 'rgba(128,144,168,0.10)' }},
+}};
+function getLinkMeta(type) {{ return LINK_TYPE_META[type] || LINK_TYPE_META.other; }}
 function persistDashboardAction(action, fields) {{
   if (!BOOT.saveEndpoint || !BOOT.saveToken) {{
     alert('Dashboard save bridge is not ready yet. Please refresh and try again.');
@@ -644,7 +710,13 @@ function renderHeader(acct, kan) {{
 }}
 function statCard(n, label, alert=false) {{ return `<div style="background:${{alert ? 'rgba(239,68,68,0.05)' : '#0F1220'}};border:1px solid ${{alert ? 'rgba(239,68,68,0.2)' : '#1A2232'}};border-radius:8px;padding:8px 14px;text-align:center;min-width:54px;"><div style="font-size:20px;font-weight:700;color:${{alert ? '#F87171' : '#E8EDF8'}};line-height:1;letter-spacing:-0.04em;">${{n}}</div><div style="font-size:9.5px;color:${{alert ? '#F87171' : '#425268'}};margin-top:2px;">${{label}}</div></div>`; }}
 function renderTabs(acct, kan) {{
-  const tabs = [ ['tasks', `Tasks${{openCount(kan)>0 ? '  ('+openCount(kan)+')' : ''}}`], ['contacts', `Contacts${{contactsFor(acct.id).length ? '  ('+contactsFor(acct.id).length+')' : ''}}`], ['notes', `Notes${{notesFor(acct.id).length ? '  ('+notesFor(acct.id).length+')' : ''}}`] ];
+  const lc = linksFor(acct.id).length;
+  const tabs = [
+    ['tasks', `Tasks${{openCount(kan)>0 ? '  ('+openCount(kan)+')' : ''}}`],
+    ['contacts', `Contacts${{contactsFor(acct.id).length ? '  ('+contactsFor(acct.id).length+')' : ''}}`],
+    ['notes', `Notes${{notesFor(acct.id).length ? '  ('+notesFor(acct.id).length+')' : ''}}`],
+    ['links', `Links${{lc ? '  ('+lc+')' : ''}}`],
+  ];
   const accent = acct.color || '#6382F0';
   return `<div style="flex-shrink:0;background:#0A0C13;border-bottom:1px solid #161B28;padding:0 22px;display:flex;align-items:center;">${{tabs.map(([id,label]) => `<button class="tab-btn" data-tab="${{id}}" style="background:transparent;border:none;cursor:pointer;font-family:inherit;padding:11px 16px;font-size:13px;font-weight:${{state.activeTab===id?'600':'400'}};color:${{state.activeTab===id?'#DCE4F0':'#425268'}};border-bottom:2px solid ${{state.activeTab===id?accent:'transparent'}};white-space:nowrap;">${{esc(label)}}</button>`).join('')}}</div>`;
 }}
@@ -672,23 +744,25 @@ function renderAddTaskForm(col) {{
 }}
 function renderContacts(acct) {{
   const raw = contactsFor(acct.id);
-  const clients = raw.filter(c => !c.isShowpadTeam);
+  const clients = raw.filter(c => !c.isShowpadTeam && !c.isExternal);
+  const external = raw.filter(c => c.isExternal);
   const showpadTeam = raw.filter(c => c.isShowpadTeam);
-  return `<div style="padding:14px 22px 10px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;font-weight:600;color:#8090A8;">${{raw.length}} Contacts</span><button data-toggle-contact style="font-size:12px;font-weight:600;background:${{state.showAddContact ? 'rgba(255,255,255,0.05)' : 'rgba(99,130,240,0.1)'}};color:${{state.showAddContact ? '#425268' : '#6382F0'}};border:1px solid ${{state.showAddContact ? '#1E2A3A' : 'rgba(99,130,240,0.2)'}};border-radius:7px;padding:5px 12px;cursor:pointer;">${{state.showAddContact ? 'Cancel' : '+ Add Contact'}}</button></div><div style="padding:0 22px 28px;">${{state.showAddContact ? renderAddContactForm() : ''}}${{renderContactSection('Clients', clients, 'Client stakeholders and customer-side contacts', 'No client contacts yet. Add one above.')}}${{renderContactSection('Showpad Account Team', showpadTeam, 'Internal Showpad teammates supporting this account', 'No Showpad account team contacts yet. Add Showpad teammates with a showpad.com email or Showpad role.')}}</div>`;
+  return `<div style="padding:14px 22px 10px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;font-weight:600;color:#8090A8;">${{raw.length}} Contacts</span><button data-toggle-contact style="font-size:12px;font-weight:600;background:${{state.showAddContact ? 'rgba(255,255,255,0.05)' : 'rgba(99,130,240,0.1)'}};color:${{state.showAddContact ? '#425268' : '#6382F0'}};border:1px solid ${{state.showAddContact ? '#1E2A3A' : 'rgba(99,130,240,0.2)'}};border-radius:7px;padding:5px 12px;cursor:pointer;">${{state.showAddContact ? 'Cancel' : '+ Add Contact'}}</button></div><div style="padding:0 22px 28px;">${{state.showAddContact ? renderAddContactForm() : ''}}${{renderContactSection('Clients', clients, 'Client stakeholders and customer-side contacts', 'No client contacts yet. Add one above.', 'client')}}${{renderContactSection('External Contacts', external, 'Partners, contractors, and third-party contacts', 'No external contacts yet. Add partners or contractors above.', 'external')}}${{renderContactSection('Showpad Account Team', showpadTeam, 'Internal Showpad teammates supporting this account', 'No Showpad account team contacts yet. Add teammates with a showpad.com email or Showpad role.', 'showpad')}}</div>`;
 }}
-function renderContactSection(title, contacts, helper, emptyText) {{
-  return `<section style="margin-bottom:18px;"><div style="display:flex;align-items:baseline;gap:8px;margin:12px 0 9px;"><h3 style="font-size:12.5px;font-weight:700;color:#D8E2F0;text-transform:uppercase;letter-spacing:0.08em;margin:0;">${{esc(title)}}</h3><span style="font-size:11px;color:#354258;">${{contacts.length}}</span></div><div style="font-size:11.5px;color:#425268;margin:-4px 0 10px;">${{esc(helper)}}</div>${{contacts.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px;">${{contacts.map(renderContactCard).join('')}}</div>` : `<div style="padding:20px 0 24px;text-align:center;color:#354258;font-size:13px;border:1px dashed #1A2232;border-radius:10px;background:rgba(255,255,255,0.01);">${{esc(emptyText)}}</div>`}}</section>`;
+function renderContactSection(title, contacts, helper, emptyText, kind) {{
+  return `<section style="margin-bottom:18px;"><div style="display:flex;align-items:baseline;gap:8px;margin:12px 0 9px;"><h3 style="font-size:12.5px;font-weight:700;color:#D8E2F0;text-transform:uppercase;letter-spacing:0.08em;margin:0;">${{esc(title)}}</h3><span style="font-size:11px;color:#354258;">${{contacts.length}}</span></div><div style="font-size:11.5px;color:#425268;margin:-4px 0 10px;">${{esc(helper)}}</div>${{contacts.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px;">${{contacts.map(c => renderContactCard(c, kind)).join('')}}</div>` : `<div style="padding:20px 0 24px;text-align:center;color:#354258;font-size:13px;border:1px dashed #1A2232;border-radius:10px;background:rgba(255,255,255,0.01);">${{esc(emptyText)}}</div>`}}</section>`;
 }}
-function renderContactCard(c) {{
+function renderContactCard(c, kind) {{
   const inf = getInf(c.supportLevel || c.influence);
   const initials = (c.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
   const avatarBg = c.influence === 'champion' ? 'rgba(99,130,240,0.14)' : c.influence === 'detractor' ? 'rgba(239,68,68,0.12)' : 'rgba(255,255,255,0.05)';
-  return `<div class="con-card" style="background:#0F1320;border:1px solid #1A2232;border-radius:10px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;"><div style="width:40px;height:40px;border-radius:50%;background:${{avatarBg}};color:${{inf.color}};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;letter-spacing:-0.02em;">${{esc(initials)}}</div><div style="flex:1;min-width:0;"><div style="display:flex;gap:6px;align-items:center;margin-bottom:2px;"><div style="font-size:13.5px;font-weight:600;color:#D8E2F0;flex:1;">${{esc(c.name)}}</div><button data-edit-contact="${{esc(c.id)}}" style="background:transparent;border:none;color:#425268;font-size:11px;cursor:pointer;">Edit</button><button data-archive-contact="${{esc(c.id)}}" style="background:transparent;border:none;color:#F87171;font-size:11px;cursor:pointer;">Archive</button></div><div style="font-size:12px;color:#425268;margin-bottom:5px;">${{esc(c.title || 'Contact')}}</div><div style="font-size:11.5px;color:#6382F0;font-family:ui-monospace,monospace;margin-bottom:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${{esc(c.email || '')}}</div><div style="display:flex;gap:5px;flex-wrap:wrap;"><span style="font-size:10.5px;font-weight:600;background:${{inf.bg}};color:${{inf.color}};border-radius:4px;padding:1px 6px;">${{inf.label}}</span>${{c.isShowpadTeam ? '<span style="font-size:10.5px;font-weight:600;background:rgba(99,130,240,0.1);color:#6382F0;border-radius:4px;padding:1px 6px;">Showpad</span>' : '<span style="font-size:10.5px;font-weight:600;background:rgba(255,255,255,0.05);color:#8090A8;border-radius:4px;padding:1px 6px;">Client</span>'}}${{c.isShowpadOwner ? '<span style="font-size:10.5px;font-weight:600;background:rgba(74,222,128,0.1);color:#4ADE80;border-radius:4px;padding:1px 6px;">Showpad Owner</span>' : ''}}${{c.isPrimary ? '<span style="font-size:10.5px;font-weight:600;background:rgba(99,130,240,0.1);color:#6382F0;border-radius:4px;padding:1px 6px;">Primary</span>' : ''}}</div></div></div>`;
+  const kindBadge = kind === 'showpad' ? '<span style="font-size:10.5px;font-weight:600;background:rgba(99,130,240,0.1);color:#6382F0;border-radius:4px;padding:1px 6px;">Showpad</span>' : kind === 'external' ? '<span style="font-size:10.5px;font-weight:600;background:rgba(245,158,11,0.1);color:#FBBF24;border-radius:4px;padding:1px 6px;">External</span>' : '<span style="font-size:10.5px;font-weight:600;background:rgba(255,255,255,0.05);color:#8090A8;border-radius:4px;padding:1px 6px;">Client</span>';
+  return `<div class="con-card" style="background:#0F1320;border:1px solid #1A2232;border-radius:10px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;"><div style="width:40px;height:40px;border-radius:50%;background:${{avatarBg}};color:${{inf.color}};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;letter-spacing:-0.02em;">${{esc(initials)}}</div><div style="flex:1;min-width:0;"><div style="display:flex;gap:6px;align-items:center;margin-bottom:2px;"><div style="font-size:13.5px;font-weight:600;color:#D8E2F0;flex:1;">${{esc(c.name)}}</div><button data-edit-contact="${{esc(c.id)}}" style="background:transparent;border:none;color:#425268;font-size:11px;cursor:pointer;">Edit</button><button data-archive-contact="${{esc(c.id)}}" style="background:transparent;border:none;color:#F87171;font-size:11px;cursor:pointer;">Archive</button></div><div style="font-size:12px;color:#425268;margin-bottom:5px;">${{esc(c.title || 'Contact')}}</div><div style="font-size:11.5px;color:#6382F0;font-family:ui-monospace,monospace;margin-bottom:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${{esc(c.email || '')}}</div><div style="display:flex;gap:5px;flex-wrap:wrap;"><span style="font-size:10.5px;font-weight:600;background:${{inf.bg}};color:${{inf.color}};border-radius:4px;padding:1px 6px;">${{inf.label}}</span>${{kindBadge}}${{c.isShowpadOwner ? '<span style="font-size:10.5px;font-weight:600;background:rgba(74,222,128,0.1);color:#4ADE80;border-radius:4px;padding:1px 6px;">Showpad Owner</span>' : ''}}${{c.isPrimary ? '<span style="font-size:10.5px;font-weight:600;background:rgba(99,130,240,0.1);color:#6382F0;border-radius:4px;padding:1px 6px;">Primary</span>' : ''}}</div></div></div>`;
 }}
 function supportLevelOptions(value='neutral') {{
   return `<option value="champion" ${{value==='champion'?'selected':''}}>Champion</option><option value="supporter" ${{value==='supporter'?'selected':''}}>Supporter</option><option value="neutral" ${{(value||'neutral')==='neutral'?'selected':''}}>Neutral</option><option value="detractor" ${{value==='detractor'?'selected':''}}>Detractor</option>`;
 }}
-function renderAddContactForm() {{ return `<div style="background:#0D1020;border:1px solid #1A2232;border-radius:10px;padding:16px;margin-bottom:14px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><input id="new-con-name" class="form-input" placeholder="Name *" /><input id="new-con-title" class="form-input" placeholder="Title / Role" /></div><div style="display:grid;grid-template-columns:1fr 180px;gap:8px;margin-bottom:10px;"><input id="new-con-email" class="form-input" placeholder="Email address" /><select id="new-con-kind" class="form-input" title="Contact type"><option value="client" selected>Client Contact</option><option value="showpad">Showpad Contact</option></select></div><div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-bottom:10px;"><select id="new-con-support" class="form-input" title="Supporter Level">${{supportLevelOptions('neutral')}}</select><label style="display:flex;align-items:center;gap:7px;font-size:12px;color:#8090A8;white-space:nowrap;"><input id="new-con-owner" type="checkbox" style="accent-color:#6382F0;" /> Showpad Owner</label></div><div style="display:flex;gap:6px;"><button data-save-contact style="font-size:12.5px;font-weight:600;background:#6382F0;color:#fff;border:none;border-radius:7px;padding:7px 14px;cursor:pointer;">Add Contact</button><button data-toggle-contact style="font-size:12.5px;font-weight:500;background:rgba(255,255,255,0.05);color:#425268;border:1px solid #1E2A3A;border-radius:7px;padding:7px 12px;cursor:pointer;">Cancel</button></div></div>`; }}
+function renderAddContactForm() {{ return `<div style="background:#0D1020;border:1px solid #1A2232;border-radius:10px;padding:16px;margin-bottom:14px;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><input id="new-con-name" class="form-input" placeholder="Name *" /><input id="new-con-title" class="form-input" placeholder="Title / Role" /></div><div style="display:grid;grid-template-columns:1fr 180px;gap:8px;margin-bottom:10px;"><input id="new-con-email" class="form-input" placeholder="Email address" /><select id="new-con-kind" class="form-input" title="Contact type"><option value="client" selected>Client Contact</option><option value="external">External Contact</option><option value="showpad">Showpad Contact</option></select></div><div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-bottom:10px;"><select id="new-con-support" class="form-input" title="Supporter Level">${{supportLevelOptions('neutral')}}</select><label style="display:flex;align-items:center;gap:7px;font-size:12px;color:#8090A8;white-space:nowrap;"><input id="new-con-owner" type="checkbox" style="accent-color:#6382F0;" /> Showpad Owner</label></div><div style="display:flex;gap:6px;"><button data-save-contact style="font-size:12.5px;font-weight:600;background:#6382F0;color:#fff;border:none;border-radius:7px;padding:7px 14px;cursor:pointer;">Add Contact</button><button data-toggle-contact style="font-size:12.5px;font-weight:500;background:rgba(255,255,255,0.05);color:#425268;border:1px solid #1E2A3A;border-radius:7px;padding:7px 12px;cursor:pointer;">Cancel</button></div></div>`; }}
 function renderNotes(acct) {{
   const raw = notesFor(acct.id);
   return `<div style="padding:14px 22px 10px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;font-weight:600;color:#8090A8;">${{raw.length}} Notes</span><button data-toggle-note style="font-size:12px;font-weight:600;background:${{state.showAddNote ? 'rgba(255,255,255,0.05)' : 'rgba(99,130,240,0.1)'}};color:${{state.showAddNote ? '#425268' : '#6382F0'}};border:1px solid ${{state.showAddNote ? '#1E2A3A' : 'rgba(99,130,240,0.2)'}};border-radius:7px;padding:5px 12px;cursor:pointer;">${{state.showAddNote ? 'Cancel' : '+ Write a note'}}</button></div><div style="padding:0 22px 28px;max-width:760px;">${{state.showAddNote ? renderAddNoteForm() : ''}}${{raw.length ? raw.map(renderNote).join('') : '<div style="padding:36px 0;text-align:center;color:#354258;font-size:13px;">No notes yet. Write one above.</div>'}}</div>`;
@@ -701,12 +775,21 @@ function renderNote(n) {{
 function renderEditorOverlay() {{
   if (!state.editor) return '';
   const e = state.editor;
-  const title = e.type === 'task' ? 'Edit Task' : e.type === 'contact' ? 'Edit Contact' : 'Edit Note';
+  const title = e.type === 'task' ? 'Edit Task' : e.type === 'contact' ? 'Edit Contact' : e.type === 'link' ? 'Edit Link' : 'Edit Note';
+  const body = e.type === 'task' ? renderTaskEditor(e.item) : e.type === 'contact' ? renderContactEditor(e.item) : e.type === 'link' ? renderLinkEditor(e.item) : renderNoteEditor(e.item);
   return `<div class="editor-backdrop" style="position:fixed;inset:0;z-index:9998;background:rgba(3,6,12,0.72);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:26px;">
     <div class="editor-panel" style="width:min(720px,94vw);max-height:88vh;overflow:auto;background:#0D1020;border:1px solid #26344D;border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.45);">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #1A2232;"><div style="font-size:18px;font-weight:700;color:#DCE4F0;">${{title}}</div><button data-editor-cancel onclick="state.editor=null;render();" style="background:rgba(255,255,255,0.04);border:1px solid #1E2A3A;border-radius:8px;color:#8090A8;padding:6px 10px;cursor:pointer;">Close</button></div>
-      <div style="padding:18px 20px;">${{e.type === 'task' ? renderTaskEditor(e.item) : e.type === 'contact' ? renderContactEditor(e.item) : renderNoteEditor(e.item)}}</div>
+      <div style="padding:18px 20px;">${{body}}</div>
     </div>
+  </div>`;
+}}
+function renderLinkEditor(lnk) {{
+  return `<div style="display:grid;gap:14px;">
+    ${{label('Type', `<select id="edit-link-type" style="${{fieldStyle()}}"><option value="showpad" ${{lnk.type==='showpad'?'selected':''}}>Showpad Instance</option><option value="rocketlane" ${{lnk.type==='rocketlane'?'selected':''}}>Rocket Lane</option><option value="sf-account" ${{lnk.type==='sf-account'?'selected':''}}>Salesforce Account</option><option value="sf-opportunity" ${{lnk.type==='sf-opportunity'?'selected':''}}>Salesforce Opportunity</option><option value="website" ${{lnk.type==='website'?'selected':''}}>Company Website</option><option value="other" ${{(!lnk.type||lnk.type==='other')?'selected':''}}>Other</option></select>`)}}
+    ${{label('Label', `<input id="edit-link-label" value="${{esc(lnk.label || '')}}" style="${{fieldStyle()}}" />`)}}
+    ${{label('URL', `<input id="edit-link-url" type="url" value="${{esc(lnk.url || '')}}" style="${{fieldStyle()}}" />`)}}
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;"><button data-editor-cancel onclick="state.editor=null;render();" class="editor-secondary">Cancel</button><button data-editor-save-link="${{esc(lnk.id)}}" onclick="saveActiveEditor()" class="editor-primary">Save link</button></div>
   </div>`;
 }}
 function fieldStyle() {{ return 'width:100%;box-sizing:border-box;background:#090D16;border:1px solid #1E2A3A;border-radius:8px;padding:9px 10px;font-size:13px;color:#C4CFDF;outline:none;font-family:inherit;'; }}
@@ -723,11 +806,11 @@ function renderTaskEditor(card) {{
   </div>`;
 }}
 function renderContactEditor(c) {{
-  const kind = c.isShowpadTeam ? 'showpad' : 'client';
+  const kind = c.isExternal ? 'external' : c.isShowpadTeam ? 'showpad' : 'client';
   return `<div style="display:grid;gap:14px;">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${{label('Name', `<input id="edit-contact-name" value="${{esc(c.name || '')}}" style="${{fieldStyle()}}" />`)}}${{label('Title / role', `<input id="edit-contact-title" value="${{esc(c.title || '')}}" style="${{fieldStyle()}}" />`)}}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${{label('Email', `<input id="edit-contact-email" value="${{esc(c.email || '')}}" style="${{fieldStyle()}}" />`)}}${{label('Phone', `<input id="edit-contact-phone" value="${{esc(c.phone || '')}}" style="${{fieldStyle()}}" />`)}}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${{label('Contact type', `<select id="edit-contact-kind" style="${{fieldStyle()}}"><option value="client" ${{kind==='client'?'selected':''}}>Client Contact</option><option value="showpad" ${{kind==='showpad'?'selected':''}}>Showpad Contact</option></select>`)}}${{label('Supporter Level', `<select id="edit-contact-support" style="${{fieldStyle()}}">${{supportLevelOptions(c.supportLevel || c.influence || 'neutral')}}</select>`)}}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${{label('Contact type', `<select id="edit-contact-kind" style="${{fieldStyle()}}"><option value="client" ${{kind==='client'?'selected':''}}>Client Contact</option><option value="external" ${{kind==='external'?'selected':''}}>External Contact</option><option value="showpad" ${{kind==='showpad'?'selected':''}}>Showpad Contact</option></select>`)}}${{label('Supporter Level', `<select id="edit-contact-support" style="${{fieldStyle()}}">${{supportLevelOptions(c.supportLevel || c.influence || 'neutral')}}</select>`)}}</div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#AEBBD0;"><input id="edit-contact-owner" type="checkbox" ${{c.isShowpadOwner ? 'checked' : ''}} style="accent-color:#6382F0;" /> Showpad Owner <span style="font-size:11.5px;color:#516070;">Main customer-side Showpad admin / primary platform owner</span></label>
     ${{label('Notes', `<textarea id="edit-contact-notes" rows="6" style="${{fieldStyle()}}resize:vertical;line-height:1.55;">${{esc(c.notes || '')}}</textarea>`)}}
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;"><button data-editor-cancel onclick="state.editor=null;render();" class="editor-secondary">Cancel</button><button data-editor-save-contact="${{esc(c.id)}}" onclick="saveActiveEditor()" class="editor-primary">Save contact</button></div>
@@ -740,9 +823,21 @@ function renderNoteEditor(n) {{
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;"><button data-editor-cancel onclick="state.editor=null;render();" class="editor-secondary">Cancel</button><button data-editor-save-note="${{esc(n.id)}}" onclick="saveActiveEditor()" class="editor-primary">Save note</button></div>
   </div>`;
 }}
+function renderLinks(acct) {{
+  const raw = linksFor(acct.id);
+  return `<div style="padding:14px 22px 10px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;font-weight:600;color:#8090A8;">${{raw.length}} Quick Links</span><button data-toggle-link style="font-size:12px;font-weight:600;background:${{state.showAddLink ? 'rgba(255,255,255,0.05)' : 'rgba(99,130,240,0.1)'}};color:${{state.showAddLink ? '#425268' : '#6382F0'}};border:1px solid ${{state.showAddLink ? '#1E2A3A' : 'rgba(99,130,240,0.2)'}};border-radius:7px;padding:5px 12px;cursor:pointer;">${{state.showAddLink ? 'Cancel' : '+ Add Link'}}</button></div><div style="padding:0 22px 28px;max-width:760px;">${{state.showAddLink ? renderAddLinkForm() : ''}}${{raw.length ? raw.map(renderLinkRow).join('') : '<div style="padding:36px 0;text-align:center;color:#354258;font-size:13px;">No links yet. Add one above.</div>'}}</div>`;
+}}
+function renderAddLinkForm() {{
+  return `<div style="background:#0D1020;border:1px solid #1A2232;border-radius:10px;padding:16px;margin-bottom:14px;"><div style="display:grid;grid-template-columns:200px 1fr;gap:8px;margin-bottom:8px;"><select id="new-link-type" class="form-input"><option value="showpad">Showpad Instance</option><option value="rocketlane">Rocket Lane</option><option value="sf-account">Salesforce Account</option><option value="sf-opportunity">Salesforce Opportunity</option><option value="website">Company Website</option><option value="other" selected>Other</option></select><input id="new-link-label" class="form-input" placeholder="Label (e.g. Spectrum Showpad)" /></div><input id="new-link-url" type="url" class="form-input" placeholder="https://…" style="margin-bottom:10px;" /><div style="display:flex;gap:6px;"><button data-save-link style="font-size:12.5px;font-weight:600;background:#6382F0;color:#fff;border:none;border-radius:7px;padding:7px 14px;cursor:pointer;">Add Link</button><button data-toggle-link style="font-size:12.5px;font-weight:500;background:rgba(255,255,255,0.05);color:#425268;border:1px solid #1E2A3A;border-radius:7px;padding:7px 12px;cursor:pointer;">Cancel</button></div></div>`;
+}}
+function renderLinkRow(lnk) {{
+  const m = getLinkMeta(lnk.type);
+  const displayUrl = (lnk.url || '').replace(/^https?:\\/\\//, '').slice(0, 60);
+  return `<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #161B28;"><span style="font-size:10.5px;font-weight:700;background:${{m.bg}};color:${{m.color}};border-radius:5px;padding:2px 7px;flex-shrink:0;white-space:nowrap;">${{esc(m.label)}}</span><div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;color:#D0D8EC;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${{esc(lnk.label || lnk.url)}}</div><div style="font-size:11.5px;color:#425268;font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${{esc(displayUrl)}}</div></div><div style="display:flex;gap:4px;align-items:center;flex-shrink:0;"><a href="${{esc(lnk.url)}}" target="_blank" rel="noopener noreferrer" style="font-size:11px;font-weight:600;background:rgba(99,130,240,0.1);color:#6382F0;border:1px solid rgba(99,130,240,0.2);border-radius:5px;padding:3px 9px;text-decoration:none;white-space:nowrap;">Open ↗</a><button data-edit-link="${{esc(lnk.id)}}" style="background:transparent;border:none;color:#425268;font-size:11px;cursor:pointer;">Edit</button><button data-archive-link="${{esc(lnk.id)}}" style="background:transparent;border:none;color:#F87171;font-size:11px;cursor:pointer;">Archive</button></div></div>`;
+}}
 function render() {{
   const acct = getAccount(); const kan = kanbanFor(acct.id);
-  const content = state.activeTab === 'contacts' ? renderContacts(acct) : state.activeTab === 'notes' ? renderNotes(acct) : renderTasks(acct, kan);
+  const content = state.activeTab === 'contacts' ? renderContacts(acct) : state.activeTab === 'notes' ? renderNotes(acct) : state.activeTab === 'links' ? renderLinks(acct) : renderTasks(acct, kan);
   document.getElementById('app').innerHTML = `<div style="display:flex;height:100vh;overflow:hidden;background:#0C0E15;font-family:'DM Sans',system-ui,sans-serif;color:#DCE4F0;">${{renderSidebar()}}<main style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;">${{renderTopBar(acct)}}${{renderHeader(acct, kan)}}${{renderTabs(acct, kan)}}<div style="flex:1;overflow-y:auto;overflow-x:hidden;background:#0C0E15;">${{content}}</div></main></div>${{renderEditorOverlay()}}`;
   bind();
 }}
@@ -778,8 +873,12 @@ function bind() {{
   document.querySelectorAll('[data-note]').forEach(el => el.addEventListener('click', () => {{ state.expandedNotes[el.dataset.note] = !state.expandedNotes[el.dataset.note]; render(); }}));
   document.querySelectorAll('[data-edit-account]').forEach(el => el.addEventListener('click', editAccount));
   document.querySelectorAll('[data-archive-account]').forEach(el => el.addEventListener('click', archiveAccount));
+  document.querySelectorAll('[data-toggle-link]').forEach(el => el.addEventListener('click', () => {{ state.showAddLink = !state.showAddLink; render(); }}));
+  document.querySelectorAll('[data-save-link]').forEach(el => el.addEventListener('click', addLink));
+  document.querySelectorAll('[data-edit-link]').forEach(el => el.addEventListener('click', e => {{ e.stopPropagation(); editLink(el.dataset.editLink); }}));
+  document.querySelectorAll('[data-archive-link]').forEach(el => el.addEventListener('click', e => {{ e.stopPropagation(); archiveLinkItem(el.dataset.archiveLink); }}));
   document.querySelectorAll('[data-editor-cancel]').forEach(el => el.addEventListener('click', () => {{ state.editor = null; render(); }}));
-  document.querySelectorAll('[data-editor-save-task],[data-editor-save-contact],[data-editor-save-note]').forEach(el => el.addEventListener('click', saveActiveEditor));
+  document.querySelectorAll('[data-editor-save-task],[data-editor-save-contact],[data-editor-save-note],[data-editor-save-link]').forEach(el => el.addEventListener('click', saveActiveEditor));
 }}
 function saveActiveEditor() {{
   if (!state.editor) return;
@@ -787,6 +886,7 @@ function saveActiveEditor() {{
   if (state.editor.type === 'task') saveTaskEditor(id);
   if (state.editor.type === 'contact') saveContactEditor(id);
   if (state.editor.type === 'note') saveNoteEditor(id);
+  if (state.editor.type === 'link') saveLinkEditor(id);
 }}
 function findTask(id) {{ const kan = kanbanFor(state.selectedId); for (const col of Object.keys(kan)) {{ const card = (kan[col] || []).find(c => String(c.id) === String(id)); if (card) return {{ card, col }}; }} return null; }}
 function editAccount() {{
@@ -836,7 +936,9 @@ function saveContactEditor(id) {{
   const kind = document.getElementById('edit-contact-kind')?.value || 'client';
   const support_level = document.getElementById('edit-contact-support')?.value || 'neutral';
   const is_showpad_owner = !!document.getElementById('edit-contact-owner')?.checked;
-  c.name = name; c.title = title; c.email = email; c.phone = phone; c.notes = notes; c.isShowpadTeam = kind === 'showpad'; c.influence = support_level; c.supportLevel = support_level; c.isShowpadOwner = is_showpad_owner;
+  c.name = name; c.title = title; c.email = email; c.phone = phone; c.notes = notes;
+  c.isShowpadTeam = kind === 'showpad'; c.isExternal = kind === 'external';
+  c.influence = support_level; c.supportLevel = support_level; c.isShowpadOwner = is_showpad_owner;
   if (is_showpad_owner) contactsFor(state.selectedId).forEach(x => {{ if (String(x.id) !== String(id)) x.isShowpadOwner = false; }});
   state.editor = null; render();
   persistDashboardAction('update_contact', {{ contact_id: id, name: c.name, title: c.title, email: c.email, phone: c.phone, notes: c.notes, contact_kind: kind, support_level, is_showpad_owner }});
@@ -886,7 +988,7 @@ function addContact() {{
   const is_showpad_owner = !!document.getElementById('new-con-owner')?.checked;
   const key = String(state.selectedId);
   if (is_showpad_owner) contactsFor(state.selectedId).forEach(x => {{ x.isShowpadOwner = false; }});
-  state.contacts[key] = [...(state.contacts[key] || []), {{ id:'saving-'+Date.now(), name, title, email, influence:support_level, supportLevel:support_level, isPrimary:false, isShowpadOwner:is_showpad_owner, isShowpadTeam: contact_kind === 'showpad' }}]; state.showAddContact=false; render();
+  state.contacts[key] = [...(state.contacts[key] || []), {{ id:'saving-'+Date.now(), name, title, email, influence:support_level, supportLevel:support_level, isPrimary:false, isShowpadOwner:is_showpad_owner, isShowpadTeam: contact_kind === 'showpad', isExternal: contact_kind === 'external' }}]; state.showAddContact=false; render();
   persistDashboardAction('create_contact', {{ account_id: state.selectedId, name, title, email, contact_kind, support_level, is_showpad_owner }});
 }}
 function addNote() {{
@@ -894,6 +996,33 @@ function addNote() {{
   const text = document.getElementById('new-note')?.value.trim(); if (!text) return;
   const key = String(state.selectedId); const d = new Date().toISOString().slice(0,10); state.notes[key] = [{{ id:'saving-'+Date.now(), ts:d, author:'Dashboard', text }}, ...(state.notes[key] || [])]; state.showAddNote=false; render();
   persistDashboardAction('create_note', {{ account_id: state.selectedId, body: text, source: 'Dashboard' }});
+}}
+function findLink(id) {{ return (linksFor(state.selectedId) || []).find(l => String(l.id) === String(id)); }}
+function addLink() {{
+  if (String(state.selectedId) === '__empty__') {{ alert('Create an account in Claude Desktop before adding dashboard items.'); return; }}
+  const url = document.getElementById('new-link-url')?.value.trim(); if (!url) return;
+  const link_type = document.getElementById('new-link-type')?.value || 'other';
+  const label = document.getElementById('new-link-label')?.value.trim() || '';
+  const key = String(state.selectedId);
+  state.links[key] = [...(state.links[key] || []), {{ id:'saving-'+Date.now(), type:link_type, label, url }}]; state.showAddLink=false; render();
+  persistDashboardAction('create_link', {{ account_id: state.selectedId, link_type, label, url }});
+}}
+function editLink(id) {{
+  const lnk = findLink(id); if (!lnk) return;
+  state.editor = {{ type: 'link', item: {{ ...lnk }} }}; render();
+}}
+function saveLinkEditor(id) {{
+  const lnk = findLink(id); if (!lnk) return;
+  const url = document.getElementById('edit-link-url')?.value.trim(); if (!url) return;
+  const link_type = document.getElementById('edit-link-type')?.value || lnk.type;
+  const label = document.getElementById('edit-link-label')?.value.trim() || '';
+  lnk.url = url; lnk.type = link_type; lnk.label = label; state.editor = null; render();
+  persistDashboardAction('update_link', {{ link_id: id, link_type, label, url }});
+}}
+function archiveLinkItem(id) {{
+  const lnk = findLink(id); if (!lnk || !confirm('Archive this link?')) return;
+  const key = String(state.selectedId); state.links[key] = (state.links[key] || []).filter(x => String(x.id) !== String(id)); render();
+  persistDashboardAction('archive_link', {{ link_id: id }});
 }}
 render();
 </script>

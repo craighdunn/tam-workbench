@@ -15,6 +15,8 @@ TASK_TYPES = {
 TASK_STATUSES = {"inbox", "active", "waiting", "blocked", "done", "archived"}
 TASK_PRIORITIES = {"low", "normal", "high", "urgent"}
 SUPPORT_LEVELS = {"champion", "supporter", "neutral", "detractor"}
+CONTACT_TYPES = {"Client Contact", "External Contact", "Showpad Contact"}
+LINK_TYPES = {"showpad", "rocketlane", "sf-account", "sf-opportunity", "website", "other"}
 DOCUMENT_TYPES = {
     "customer_email", "internal_escalation", "meeting_agenda", "meeting_recap",
     "troubleshooting_summary", "executive_summary", "qbr_notes", "research_summary",
@@ -70,7 +72,8 @@ class WorkbenchDB:
             self._ensure_account_color_column(conn)
             self._ensure_archive_columns(conn)
             self._ensure_contact_relationship_columns(conn)
-            conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '4')")
+            self._ensure_account_links_table(conn)
+            conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '5')")
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -437,6 +440,53 @@ class WorkbenchDB:
         path.write_text(doc.get("body") or "", encoding="utf-8")
         return path
 
+    def create_link(self, account_id: int, link_type: str = "other", label: str = "", url: str = "") -> dict[str, Any]:
+        self.get_account(account_id)
+        self._validate_choice("link_type", link_type, LINK_TYPES)
+        ts = now_iso()
+        with self.connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO account_links (account_id, link_type, label, url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (account_id, link_type, label, url, ts, ts),
+            )
+            return self.get_link(cur.lastrowid, conn=conn)
+
+    def get_link(self, link_id: int, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+        row = self._fetch_one("SELECT * FROM account_links WHERE id = ?", (link_id,), conn)
+        if row is None:
+            raise KeyError(f"link not found: {link_id}")
+        return row
+
+    def list_links(self, account_id: int | None = None, include_archived: bool = False) -> list[dict[str, Any]]:
+        where, params = [], []
+        if not include_archived:
+            where.append("COALESCE(archived_at, '') = ''")
+        if account_id is not None:
+            where.append("account_id = ?"); params.append(account_id)
+        sql = "SELECT * FROM account_links" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY created_at ASC"
+        return self.query_all(sql, tuple(params))
+
+    def update_link(self, link_id: int, **fields: Any) -> dict[str, Any]:
+        allowed = {"link_type", "label", "url"}
+        updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+        if "link_type" in updates:
+            self._validate_choice("link_type", updates["link_type"], LINK_TYPES)
+        if not updates:
+            return self.get_link(link_id)
+        updates["updated_at"] = now_iso()
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        params = tuple(updates.values()) + (link_id,)
+        with self.connect() as conn:
+            conn.execute(f"UPDATE account_links SET {set_clause} WHERE id = ?", params)
+            return self.get_link(link_id, conn=conn)
+
+    def archive_link(self, link_id: int) -> dict[str, Any]:
+        self.get_link(link_id)
+        ts = now_iso()
+        with self.connect() as conn:
+            conn.execute("UPDATE account_links SET archived_at = ?, updated_at = ? WHERE id = ?", (ts, ts, link_id))
+            return self.get_link(link_id, conn=conn)
+
     def get_account_context(self, account_id: int) -> dict[str, Any]:
         return {
             "account": self.get_account(account_id),
@@ -444,6 +494,7 @@ class WorkbenchDB:
             "tasks": self.list_tasks(account_id=account_id),
             "notes": self.list_notes(account_id=account_id),
             "documents": self.list_documents(account_id=account_id),
+            "links": self.list_links(account_id=account_id),
         }
 
     def get_task_context(self, task_id: int) -> dict[str, Any]:
@@ -694,6 +745,21 @@ class WorkbenchDB:
         if "is_showpad_owner" not in columns:
             conn.execute("ALTER TABLE contacts ADD COLUMN is_showpad_owner INTEGER NOT NULL DEFAULT 0")
 
+    def _ensure_account_links_table(self, conn: sqlite3.Connection) -> None:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS account_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                link_type TEXT NOT NULL DEFAULT 'other',
+                label TEXT NOT NULL DEFAULT '',
+                url TEXT NOT NULL DEFAULT '',
+                archived_at TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_account_links_account ON account_links(account_id)")
+
 
     def _fetch_all(self, sql: str, params: tuple[Any, ...], conn: sqlite3.Connection | None) -> list[dict[str, Any]]:
         if conn is not None:
@@ -821,6 +887,17 @@ CREATE TABLE IF NOT EXISTS reporting_rows (
     data_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS account_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    link_type TEXT NOT NULL DEFAULT 'other',
+    label TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    archived_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_accounts_name ON accounts(name);
 CREATE INDEX IF NOT EXISTS idx_contacts_account_id ON contacts(account_id);
 CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);
@@ -830,4 +907,5 @@ CREATE INDEX IF NOT EXISTS idx_notes_account_task ON notes(account_id, task_id);
 CREATE INDEX IF NOT EXISTS idx_documents_account_task ON documents(account_id, task_id);
 CREATE INDEX IF NOT EXISTS idx_reporting_imports_type ON reporting_imports(report_type);
 CREATE INDEX IF NOT EXISTS idx_reporting_rows_import ON reporting_rows(import_id);
+CREATE INDEX IF NOT EXISTS idx_account_links_account ON account_links(account_id);
 """
