@@ -223,17 +223,20 @@ def _handle_dashboard_action(data_dir: str | Path, params: dict[str, Any]) -> di
             role = "External Contact"
         elif contact_kind == "client" and not role:
             role = "Client Contact"
-        contact = db.update_contact(
-            contact_id,
-            name=_param_value(params, "name") or None,
-            title=_param_value(params, "title") or None,
-            email=_param_value(params, "email") or None,
-            phone=_param_value(params, "phone") or None,
-            notes=_param_value(params, "notes") or None,
-            role=role or None,
-            support_level=_param_value(params, "support_level", "neutral"),
-            is_showpad_owner=_param_bool(params, "is_showpad_owner"),
-        )
+        contact_fields: dict[str, Any] = {
+            "title": _param_value(params, "title"),
+            "email": _param_value(params, "email"),
+            "phone": _param_value(params, "phone"),
+            "notes": _param_value(params, "notes"),
+            "support_level": _param_value(params, "support_level", "neutral"),
+            "is_showpad_owner": _param_bool(params, "is_showpad_owner"),
+        }
+        name = _param_value(params, "name")
+        if name:
+            contact_fields["name"] = name
+        if role:
+            contact_fields["role"] = role
+        contact = db.update_contact(contact_id, **contact_fields)
         return {"message": f"Updated contact: {contact['name']}", "contact": contact}
 
     if action == "archive_contact":
