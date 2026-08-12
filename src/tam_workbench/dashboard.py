@@ -360,7 +360,14 @@ def _build_design_payload(data: dict[str, Any]) -> dict[str, Any]:
         influence = _contact_influence(contact)
         role = contact.get("role") or ""
         is_external = role == "External Contact"
-        is_showpad = _is_showpad_team_contact(contact) and not is_external
+        # Explicit standardized roles take precedence over the heuristic so users
+        # can reclassify contacts (e.g. move a @showpad.com contact to Clients).
+        if role in ("Client Contact", "External Contact"):
+            is_showpad = False
+        elif role == "Showpad Contact":
+            is_showpad = True
+        else:
+            is_showpad = _is_showpad_team_contact(contact) and not is_external
         contact_groups.setdefault(str(account_id), []).append(
             {
                 "id": str(contact.get("id") or len(contact_groups.get(str(account_id), []))),
