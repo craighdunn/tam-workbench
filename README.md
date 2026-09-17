@@ -12,7 +12,7 @@ The tool is intentionally local-first: Claude Desktop is the reasoning interface
 - Task tracking and open-work snapshots
 - Notes and reusable Markdown documents
 - Markdown export
-- Local CSV reporting import/analysis for Showpad exports
+- Local CSV reporting import/analysis for exports
 - Course usage summaries and active-user identification
 - Asset/user metadata review and local CSV export helpers
 - Claude Desktop MCP tools
@@ -21,8 +21,8 @@ The tool is intentionally local-first: Claude Desktop is the reasoning interface
 
 ## What it does not provide
 
-- No Showpad credential storage
-- No direct Showpad API updates
+- No  credential storage
+- No direct API updates
 - No browser automation
 - No arbitrary shell execution through MCP
 - No cloud database or shared server
@@ -190,7 +190,7 @@ What are my active customer issues and next actions?
 ```
 
 ```text
-Import this Showpad course usage CSV and summarize active learners, course engagement, and completion statuses.
+Import this course usage CSV and summarize active learners, course engagement, and completion statuses.
 ```
 
 ## Development / verification
